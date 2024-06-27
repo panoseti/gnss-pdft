@@ -1,0 +1,18 @@
+{
+    "receiver": [
+        {
+            "name": "COM3",
+            "device_rpi": "/dev/ttyACM0",
+            "device_wsl": "/dev/ttyS3",
+            "baudrate": 38400,
+            "comments": "..."
+        },
+        {
+            "name": "COM5",
+            "device_rpi": "/dev/ttyACM1",
+            "device_wsl": "/dev/ttyS5",
+            "baudrate": 38400,
+            "comments": "..."
+        }
+    ]
+}

@@ -10,6 +10,13 @@ from serial import Serial
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
 from qerr_utils import *
 
+BAUDRATE = 38400
+packet_data_dir = 'data'
+
+def get_experiment_dir(start_timestamp, device):
+    device_name = device.split('/')[-1]
+    return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
+
 def poll_config(device):
     # Poll configuration of "CFG_MSGOUT_UBX_TIM_TP_USB". On startup, should be 0 by default.
     layer = POLL_LAYER_RAM
@@ -18,7 +25,7 @@ def poll_config(device):
     msg = UBXMessage.config_poll(layer, position, keys)
     # print(msg)
     print('Polling configuration:')
-    with Serial(device, 38400, timeout=3) as stream:
+    with Serial(device, BAUDRATE, timeout=3) as stream:
         stream.write(msg.serialize())
         ubr_poll_status = UBXReader(stream, protfilter=UBX_PROTOCOL)
         raw_data, parsed_data = ubr_poll_status.read()
@@ -66,6 +73,86 @@ def verify_dataflow(device, timeout=3):
         print('Interrupted by KeyboardInterrupt.')
         return False
     raise Exception(f'Not all packets are being received. Check the following for details: {packet_id_flags}')
+
+
+def create_empty_df(data_type):
+    """
+    @param data_type: 'NAV-TIMEUTC', 'TIM-TP', or 'MERGED'.
+    @return: empty df with schema of requested data_type.
+    """
+    if data_type == 'NAV-TIMEUTC':
+        df = pd.DataFrame(
+            columns=[
+                'pkt_unix_timestamp_NAV-TIMEUTC',
+                # NAV-TIMEUTC data
+                'iTOW (ms)',
+                'tAcc (ns)',
+                'nano (ns)',
+                'year',
+                'month',
+                'day',
+                'hour',
+                'min',
+                'sec',
+                'validTOW_flag',
+                'validWKN_flag',
+                'validUTC_flag',
+                'utcStandard_NAV-TIMEUTC',
+            ]
+        )
+    elif data_type == 'TIM-TP':
+        df = pd.DataFrame(
+            columns=[
+                'pkt_unix_timestamp_TIM-TP',
+                # TIM-TP data
+                'towMS (ms)',  # towMS (unit: ms)
+                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
+                'qErr (ps)',  # qErr (unit: ps)
+                'week (weeks)',  # week (unit: weeks)
+                'timeBase_flag',
+                'utc_flag',
+                'raim_flag',
+                'qErrInvalid_flag',
+                'timeRefGnss',
+                'utcStandard_TIM-TP'
+            ]
+        )
+
+    elif data_type == 'MERGED':
+        df = pd.DataFrame(
+            columns=[
+                'pkt_unix_timestamp_TIM-TP',
+                'pkt_unix_timestamp_NAV-TIMEUTC',
+                # NAV-TIMEUTC data
+                'iTOW (ms)',
+                'tAcc (ns)',
+                'nano (ns)',
+                'year',
+                'month',
+                'day',
+                'hour',
+                'min',
+                'sec',
+                'validTOW_flag',
+                'validWKN_flag',
+                'validUTC_flag',
+                'utcStandard_NAV-TIMEUTC',
+                # TIM-TP data
+                'towMS (ms)',  # towMS (unit: ms)
+                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
+                'qErr (ps)',  # qErr (unit: ps)
+                'week (weeks)',  # week (unit: weeks)
+                'timeBase_flag',
+                'utc_flag',
+                'raim_flag',
+                'qErrInvalid_flag',
+                'timeRefGnss',
+                'utcStandard_TIM-TP'
+            ]
+        )
+    else:
+        raise ValueError(f'Unrecognized data_type: {data_type}')
+    return df
 
 
 

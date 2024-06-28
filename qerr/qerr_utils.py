@@ -9,15 +9,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-
 qerr_config_file = 'qerr_config.json'
-packet_data_dir = 'data'
-BAUDRATE = 38400
-
-
-def get_experiment_dir(start_timestamp, device):
-    device_name = device.split('/')[-1]
-    return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
 
 def save_data(df, fpath):
     with open(fpath, 'w') as f:
@@ -60,85 +52,6 @@ def make_json_config():
         print(f"created {qerr_config_file}")
     else:
         print(f"{qerr_config_file} already exists")
-
-def create_empty_df(data_type):
-    """
-    @param data_type: 'NAV-TIMEUTC', 'TIM-TP', or 'MERGED'.
-    @return: empty df with schema of requested data_type.
-    """
-    if data_type == 'NAV-TIMEUTC':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'nano (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC',
-            ]
-        )
-    elif data_type == 'TIM-TP':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
-
-    elif data_type == 'MERGED':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'nano (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC',
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
-    else:
-        raise ValueError(f'Unrecognized data_type: {data_type}')
-    return df
 
 
 def plot():

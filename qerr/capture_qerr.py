@@ -241,8 +241,7 @@ def collect_data(df_refs, device, timeout=10):
                     # Do write transaction
                     df_refs['MERGED'].loc[len(df_refs['MERGED'])] = merged_data
                     df_refs['TIM-TP'].loc[len(df_refs['TIM-TP'])] = packet_cache['TIM-TP']['parsed_data']
-                    df_refs['NAV-TIMEUTC'].loc[len(df_refs['NAV-TIMEUTC'])] = packet_cache['NAV-TIMEUTC'][
-                        'parsed_data']
+                    df_refs['NAV-TIMEUTC'].loc[len(df_refs['NAV-TIMEUTC'])] = packet_cache['NAV-TIMEUTC']['parsed_data']
                     # Reset cache
                     packet_cache['TIM-TP']['valid'] = False
                     packet_cache['NAV-TIMEUTC']['valid'] = False
@@ -269,7 +268,7 @@ def check_device(device):
     return False
 
 def init(args):
-    """Configure device and ensure all desired packets are being received."""
+    """Configure device and verify all desired packets are being received."""
     device = args.device
     check_device(device)
     poll_config(device)

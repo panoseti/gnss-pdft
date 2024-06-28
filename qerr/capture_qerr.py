@@ -123,7 +123,7 @@ def create_empty_df(data_type):
     if data_type == 'NAV-TIMEUTC':
         df = pd.DataFrame(
             columns=[
-                'pkt_unix_timestamp',
+                'pkt_unix_timestamp_NAV-TIMEUTC',
                 # NAV-TIMEUTC data
                 'iTOW (ms)',
                 'tAcc (ns)',
@@ -142,7 +142,7 @@ def create_empty_df(data_type):
     elif data_type == 'TIM-TP':
         df = pd.DataFrame(
             columns=[
-                'pkt_unix_timestamp',
+                'pkt_unix_timestamp_TIM-TP',
                 # TIM-TP data
                 'towMS (ms)',  # towMS (unit: ms)
                 'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
@@ -160,7 +160,8 @@ def create_empty_df(data_type):
     elif data_type == 'MERGED':
         df = pd.DataFrame(
             columns=[
-                'pkt_unix_timestamp',
+                'pkt_unix_timestamp_TIM-TP',
+                'pkt_unix_timestamp_NAV-TIMEUTC',
                 # NAV-TIMEUTC data
                 'iTOW (ms)',
                 'tAcc (ns)',
@@ -219,7 +220,7 @@ def collect_data(df_refs, device, timeout=10):
                     packet_cache['NAV-TIMEUTC']['valid'] = True
                     packet_cache['NAV-TIMEUTC']['timestamp'] = pkt_unix_timestamp
                     packet_cache['NAV-TIMEUTC']['parsed_data'] = {
-                        'pkt_unix_timestamp': pkt_unix_timestamp,
+                        'pkt_unix_timestamp_NAV-TIMEUTC': pkt_unix_timestamp,
                         'iTOW (ms)':        parsed_data.iTOW,
                         'tAcc (ns)':        parsed_data.tAcc,
                         'year':             parsed_data.year,
@@ -238,7 +239,7 @@ def collect_data(df_refs, device, timeout=10):
                     packet_cache['TIM-TP']['valid'] = True
                     packet_cache['TIM-TP']['timestamp'] = pkt_unix_timestamp
                     packet_cache['TIM-TP']['parsed_data'] = {
-                        'pkt_unix_timestamp': pkt_unix_timestamp,
+                        'pkt_unix_timestamp_TIM-TP': pkt_unix_timestamp,
                         'towMS (ms)':           parsed_data.towMS,
                         'towSubMS':             parsed_data.towSubMS,
                         'qErr (ps)':            parsed_data.qErr,
@@ -262,7 +263,7 @@ def collect_data(df_refs, device, timeout=10):
                         **packet_cache['TIM-TP']['parsed_data'],
                         **packet_cache['NAV-TIMEUTC']['parsed_data']
                     }
-                    merged_data['pkt_unix_timestamp'] = pkt_unix_timestamp # Overwrite individual timestamps with merged timestamp.
+                    # merged_data['pkt_unix_timestamp'] = pkt_unix_timestamp # Overwrite individual timestamps with merged timestamp.
                     # Verify merged data schema matches pandas schema.
                     if set(merged_data.keys()) != set(df_refs['MERGED'].columns.tolist()):
                         raise KeyError(

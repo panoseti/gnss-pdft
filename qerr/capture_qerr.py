@@ -99,6 +99,7 @@ def collect_data(df_refs, device, timeout=10):
                         'pkt_unix_timestamp_NAV-TIMEUTC': pkt_unix_timestamp,
                         'iTOW (ms)':        parsed_data.iTOW,
                         'tAcc (ns)':        parsed_data.tAcc,
+                        'nano (ns)':        parsed_data.nano,
                         'year':             parsed_data.year,
                         'month':            parsed_data.month,
                         'day':              parsed_data.day,

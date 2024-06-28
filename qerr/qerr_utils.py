@@ -73,6 +73,7 @@ def create_empty_df(data_type):
                 # NAV-TIMEUTC data
                 'iTOW (ms)',
                 'tAcc (ns)',
+                'nano (ns)',
                 'year',
                 'month',
                 'day',
@@ -111,6 +112,7 @@ def create_empty_df(data_type):
                 # NAV-TIMEUTC data
                 'iTOW (ms)',
                 'tAcc (ns)',
+                'nano (ns)',
                 'year',
                 'month',
                 'day',

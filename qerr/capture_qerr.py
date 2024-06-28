@@ -16,13 +16,14 @@ def poll_config(device):
     position = 0
     keys = ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"]
     msg = UBXMessage.config_poll(layer, position, keys)
-    print(msg)
+    # print(msg)
+    print('Polling configuration:')
     with Serial(device, 38400, timeout=3) as stream:
         stream.write(msg.serialize())
         ubr_poll_status = UBXReader(stream, protfilter=UBX_PROTOCOL)
         raw_data, parsed_data = ubr_poll_status.read()
         if parsed_data is not None:
-            print(parsed_data)
+            print('\t', parsed_data)
 
 
 def set_config(device):
@@ -31,31 +32,39 @@ def set_config(device):
 
     cfgData = [("CFG_MSGOUT_UBX_TIM_TP_USB", 1), ("CFG_MSGOUT_UBX_NAV_TIMEUTC_USB", 1)]
     msg = UBXMessage.config_set(layer, transaction, cfgData)
-    print(msg)
-    with Serial(device, BAUDRATE, timeout=100) as stream:
+    print('Updating configuration:')
+    # print(msg)
+    with Serial(device, BAUDRATE, timeout=10) as stream:
         stream.write(msg.serialize())
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        for i in range(3):
+        for i in range(1):
             raw_data, parsed_data = ubr.read()
             if parsed_data is not None:
-                print(parsed_data)
+                print('\t', parsed_data)
 
-def verify_dataflow(device, timeout=10):
+def verify_dataflow(device, timeout=3):
     """Verify packets of desired types are being received."""
     packet_id_flags = {
         'NAV-TIMEUTC': False,
         'TIM-TP': False
     }
-    with Serial(device, BAUDRATE, timeout=timeout) as stream:
-        ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        for i in range(1000):
-            raw_data, parsed_data = ubr.read()
-            if parsed_data:
-                for packet_id in packet_id_flags.keys():
-                    if parsed_data.identity == packet_id:
-                        packet_id_flags[packet_id] = True
-            if all(packet_id_flags.values()):
-                return True
+    try:
+        with Serial(device, BAUDRATE, timeout=timeout) as stream:
+            ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
+            print('Verifying packets are being received... (If stuck at this step, re-run with the "init" option.)')
+
+            for i in range(10):
+                raw_data, parsed_data = ubr.read()
+                if parsed_data:
+                    for packet_id in packet_id_flags.keys():
+                        if parsed_data.identity == packet_id:
+                            packet_id_flags[packet_id] = True
+                if all(packet_id_flags.values()):
+                    print('All packets are being received.\n')
+                    return True
+    except KeyboardInterrupt:
+        print('Interrupted by KeyboardInterrupt.')
+        return False
     raise Exception(f'Not all packets are being received. Check the following for details: {packet_id_flags}')
 
 
@@ -164,12 +173,32 @@ def collect_data(df_refs, device, timeout=10):
                         df_refs['NAV-TIMEUTC'].loc[len(df_refs['NAV-TIMEUTC'])] = packet_cache['NAV-TIMEUTC']['parsed_data']
                         packet_cache['NAV-TIMEUTC']['valid'] = False
 
-def start(device):
-    # Configure device and ensure all desired packets are being received.
+def check_device(device):
+    if device is not None:
+        if not os.path.exists(device):
+            raise FileNotFoundError(f'Cannot access {device}')
+        return True
+    return False
+
+def init(args):
+    """Configure device and ensure all desired packets are being received."""
+    device = args.device
+    check_device(device)
     poll_config(device)
     set_config(device)
     poll_config(device)
-    verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    verified = verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    if not verified:
+        return False
+    print(f"Device initialized. Ready to collect data!")
+
+
+def start_collect(args):
+    device = args.device
+    check_device(device)
+    verified = verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    if not verified:
+        return False
     # Create dataframes
     df_refs = {
         'NAV-TIMEUTC':  create_empty_df('NAV-TIMEUTC'),
@@ -197,15 +226,26 @@ def start(device):
 
 
 if __name__ == '__main__':
+    # create the top-level parser
     parser = argparse.ArgumentParser()
-    parser.add_argument('device',
-                        help='specify the device path. example: /dev/ttyS3',
-                        type=str,
-                        )
-    args = parser.parse_args()
-    if args.device is not None:
-        if os.path.exists(args.device):
-            start(args.device)
-        else:
-            print(f'Cannot access {args.device}')
+    subparsers = parser.add_subparsers(required=True)
 
+    # create parser for the init command
+    parser_init = subparsers.add_parser('init',
+                                        description='Configure device and ensure NAV-TIMEUTC and TIM-TP packets are being received.')
+    parser_init.add_argument('device',
+                             help='specify the device path. example: /dev/ttyS3',
+                             type=str)
+    parser_init.set_defaults(func=init)
+
+    # create parser for the collect command
+    parser_collect = subparsers.add_parser('collect',
+                                           description='Start data collection. (To stop collection, use CTRL+C.)')
+    parser_collect.add_argument('device',
+                                help='specify the device path. example: /dev/ttyS3',
+                                type=str,
+                                )
+    parser_collect.set_defaults(func=start_collect)
+
+    args = parser.parse_args()
+    args.func(args)

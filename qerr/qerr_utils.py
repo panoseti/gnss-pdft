@@ -138,4 +138,5 @@ def create_empty_df(data_type):
     return df
 
 
-def plot
+def plot():
+    ...

@@ -65,9 +65,8 @@ def make_json_config():
         else:
             print(f"{qerr_config_file} already exists")
 
-def poll_config(receiver_config):
+def poll_config(device):
     # Poll configuration of "CFG_MSGOUT_UBX_TIM_TP_USB". On startup, should be 0 by default.
-    device = receiver_config['device']
     layer = POLL_LAYER_RAM
     position = 0
     keys = ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"]

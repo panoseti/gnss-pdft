@@ -1,69 +1,14 @@
 #!/usr/bin/env python3
 
-import os
+"""
+Data collection program for qerr capture.
+"""
+
 import datetime
 import argparse
-import json
-
 from serial import Serial
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
-
-qerr_config_file = 'qerr_config.json'
-packet_data_dir = 'data'
-BAUDRATE = 38400
-
-
-
-def get_experiment_dir(start_timestamp):
-    return f'{packet_data_dir}/start_{start_timestamp}'
-
-def save_data(df, fpath):
-    with open(fpath, 'w') as f:
-        df.to_csv(f)
-
-def load_data(fpath):
-    with open(fpath, 'r') as f:
-        df = pd.read_csv(f, index_col=0)
-    return df
-
-def verify_data():
-    ...
-
-def load_qerr_config():
-    if not os.path.exists(qerr_config_file):
-        raise FileNotFoundError(f"{qerr_config_file} does not exist."
-                                f"\nPlease re-run this script with the help flag -h to see the option to create it.")
-    with open(qerr_config_file) as f:
-        return json.load(f)
-
-def make_json_config():
-        config_template = {
-            'receiver': [
-                {
-                    'name': '...',
-                    'device_rpi': '/dev/...',
-                    'device_wsl': '/dev/...',
-                    'baudrate': 38400,
-                    'comments': '...'
-                },
-                {
-                    'name': '...',
-                    'device_rpi': '/dev/...',
-                    'device_wsl': '/dev/...',
-                    'baudrate': 38400,
-                    'comments': '...'
-                }
-            ]
-        }
-        if not os.path.exists(qerr_config_file):
-            with open(qerr_config_file, 'w') as f:
-                json.dump(config_template, f, indent=4)
-            print(f"created {qerr_config_file}")
-        else:
-            print(f"{qerr_config_file} already exists")
+from qerr_utils import *
 
 def poll_config(device):
     # Poll configuration of "CFG_MSGOUT_UBX_TIM_TP_USB". On startup, should be 0 by default.
@@ -113,83 +58,6 @@ def verify_dataflow(device, timeout=10):
                 return True
     raise Exception(f'Not all packets are being received. Check the following for details: {packet_id_flags}')
 
-
-def create_empty_df(data_type):
-    """
-    @param data_type: 'NAV-TIMEUTC', 'TIM-TP', or 'MERGED'.
-    @return: empty df with schema of requested data_type.
-    """
-    if data_type == 'NAV-TIMEUTC':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC',
-            ]
-        )
-    elif data_type == 'TIM-TP':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
-
-    elif data_type == 'MERGED':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC'
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
-    else:
-        raise ValueError(f'Unrecognized data_type: {data_type}')
-    return df
 
 
 def collect_data(df_refs, device, timeout=10):
@@ -264,10 +132,13 @@ def collect_data(df_refs, device, timeout=10):
                     }
                     # merged_data['pkt_unix_timestamp'] = pkt_unix_timestamp # Overwrite individual timestamps with merged timestamp.
                     # Verify merged data schema matches pandas schema.
-                    if set(merged_data.keys()) != set(df_refs['MERGED'].columns.tolist()):
+                    merged_keys = set(merged_data.keys())
+                    schema_keys = set(df_refs['MERGED'].columns.tolist())
+                    if merged_keys != schema_keys:
                         raise KeyError(
-                            'packet keys do not match data schema:\nPacket keys: {}\nSchema: {}'.format(
-                                list(merged_data.keys()), df_refs['MERGED'].columns.tolist()
+                            'packet keys do not match data schema:'
+                            '\nPacket keys: {}\nSchema: {}.\n '.format(
+                                merged_keys - schema_keys, schema_keys - merged_keys
                             )
                         )
                     # Do write transaction
@@ -278,6 +149,11 @@ def collect_data(df_refs, device, timeout=10):
                     # Reset cache
                     packet_cache['TIM-TP']['valid'] = False
                     packet_cache['NAV-TIMEUTC']['valid'] = False
+                    print('Collection stats:'
+                          '\tMERGED: {:6d} '
+                          '\tTIM-TP: {:6d} '
+                          '\tNAV-TIMEUTC: {:6d}'
+                          ''.format(len(df_refs['MERGED']), len(df_refs['TIM-TP']), len(df_refs['NAV-TIMEUTC'])), end='\r')
                 else:
                     # Drop the earlier packet from merge if time diff is too great.
                     # However, save packet to individual df anyway to prevent data loss.
@@ -292,8 +168,8 @@ def start(device):
     # Configure device and ensure all desired packets are being received.
     poll_config(device)
     set_config(device)
+    poll_config(device)
     verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
-
     # Create dataframes
     df_refs = {
         'NAV-TIMEUTC':  create_empty_df('NAV-TIMEUTC'),
@@ -305,7 +181,8 @@ def start(device):
     start_timestamp = datetime.datetime.now().isoformat()
     experiment_dir = get_experiment_dir(start_timestamp)
     os.makedirs(experiment_dir, exist_ok=False)
-    print('Starting data collection. Timestamp: {}'.format(start_timestamp))
+    print('Starting data collection. To stop collection, use CTRL+C.'
+          '\nStart timestamp: {}'.format(start_timestamp))
     try:
         collect_data(df_refs, device)
     except KeyboardInterrupt:

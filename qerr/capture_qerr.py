@@ -208,7 +208,7 @@ def start_collect(args):
 
     # Start data collection
     start_timestamp = datetime.datetime.now().isoformat()
-    experiment_dir = get_experiment_dir(start_timestamp)
+    experiment_dir = get_experiment_dir(start_timestamp, device)
     os.makedirs(experiment_dir, exist_ok=False)
     print('Starting data collection. To stop collection, use CTRL+C.'
           '\nStart timestamp: {}'.format(start_timestamp))
@@ -232,7 +232,7 @@ if __name__ == '__main__':
 
     # create parser for the init command
     parser_init = subparsers.add_parser('init',
-                                        description='Configure device and ensure NAV-TIMEUTC and TIM-TP packets are being received.')
+                                        description='Configure device and verify NAV-TIMEUTC and TIM-TP packets are being received.')
     parser_init.add_argument('device',
                              help='specify the device path. example: /dev/ttyS3',
                              type=str)

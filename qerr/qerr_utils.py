@@ -15,8 +15,9 @@ packet_data_dir = 'data'
 BAUDRATE = 38400
 
 
-def get_experiment_dir(start_timestamp):
-    return f'{packet_data_dir}/start_{start_timestamp}'
+def get_experiment_dir(start_timestamp, device):
+    device_name = device.split('/')[-1]
+    return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
 
 def save_data(df, fpath):
     with open(fpath, 'w') as f:

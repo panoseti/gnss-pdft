@@ -314,7 +314,7 @@ def start(device):
     finally:
         # Save data
         for data_type in df_refs.keys():
-            fpath = f'{experiment_dir}.data_type_{data_type}'
+            fpath = f'{experiment_dir}/data-type_{data_type}.start_{start_timestamp}'
             save_data(df_refs[data_type], fpath)
         print('Data saved in {}'.format(experiment_dir))
 

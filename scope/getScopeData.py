@@ -49,12 +49,12 @@ for fileCounter in range(1, totalFiles+1):
 	with open(saveFileName, 'a') as aFile:
 		startTime = datetime.now()
 		while((datetime.now() - startTime).total_seconds() < fileWriteInterval):
-			currentTime = datetime.now() # current date and time
-			currentTimeString = currentTime.strftime("%m/%d/%Y %H:%M:%S.%f:" ) # Write the date to a file
-			
 			# Have the except block to deal with possible timeouts
 			try:
+				currentTime = datetime.now() # current date and time
+				currentTimeString = currentTime.strftime("%m/%d/%Y %H:%M:%S.%f:" ) # Write the date to a file
 				separation = inst.query(measCommand)
+				endCommandTime = datetime.now()
 				measuredSeparation = float(separation.strip())*1e9 # Save things in nanoseconds
 				# Makes it so you don't have excessive precision
 				aFile.write(currentTimeString + '\t' + str(round(measuredSeparation, 3)) + '\n')
@@ -62,7 +62,7 @@ for fileCounter in range(1, totalFiles+1):
 				print(e)
 				# A dumb error message
 				print("DARN TOOTIN' YOU PROBABLY HAD A TIMEOUT")
-			time.sleep(timeInterval)
+			time.sleep(timeInterval - 0.001 - (endCommandTime - currentTime).total_seconds())
 
 print('ENDED')
 

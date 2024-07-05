@@ -10,13 +10,28 @@ import pytz
 import time
 
 
-# Takes pff file and get a timestamp
+# Takes pff file and get a timestamp - Does not work if there is more than one quabo (7/5/24)
+
+# Stealing from Wei's wr_to_unix code in util/pff.py
+def wr_to_unix(pkt_tai, tv_sec):
+    d = (tv_sec - pkt_tai + 37)%1024
+    if d == 0:
+        return 0 #tv_sec
+    elif d == 1:
+        return -1 #tv_sec - 1
+    elif d == 1023:
+        return 1 #tv_sec + 1
+    else:
+        #return 0
+        raise Exception('WR and Unix times differ by > 1 sec: pkt_tai %d tv_sec %d d %d'%(pkt_tai, tv_sec, d))
+
 
 # Some arguments - takes in a directory + a savefile
 # Example of calling the script: python pypff_getmetada.py -d directoryName -sf name.csv file1 file2 file3
 parser = ArgumentParser()
 parser.add_argument("-d", "--dir", type=str, default='./', help="Give a directory look for files defaults to cwd", required = False)
-parser.add_argument("-sf", "--save", type=str, default='saveFile.csv', help="Savefile", required = False)
+parser.add_argument("-v", "--verbose", action = 'store_true', help="Verbose mode")
+parser.add_argument("-sf", "--save", type=str, default='saveFile.csv', help="Savefile default is saveFile.csv if none given - will overwrite", required = False)
 
 
 # Collect files
@@ -47,25 +62,41 @@ for aFile in allFiles:
 	print('ON FILE: ' + str(aFile))
 	dpff = pypff.io.datapff(aFile)
 	dpff_d, dpff_md = dpff.readpff(ver='qfb', metadata=True)
-	
+
 	# Check if the key is in the file
 	if not('tv_sec' in dpff_md) or not('pkt_nsec' in dpff_md):
 		print('Key not found in ' + str(aFile))
 		print('Not including it in the dataset')
 	else:
-		holderTimes_sec = [x for x in dpff_md['tv_sec'].ravel()] #, 
-		print(holderTimes_sec[:10])
+		if args.verbose:
+			print('Getting seconds data from Unix')
+		holderTimes_sec = [x for x in dpff_md['tv_sec'].ravel()] #,
+		if args.verbose:
+			print('Getting 10-bit seconds data from White Rabbit')
+		holderTimes_sec_wr = [x[0] for x in dpff_md['pkt_tai']]
+		if args.verbose:
+			print('Calculating delta between Unix seconds and White rabbits seconds')
+		deltas = [wr_to_unix(val[0], int(val[1]%1024)) for val in zip(holderTimes_sec_wr, holderTimes_sec)]
+		if args.verbose:
+			print('Converting UTC time to PT time')
+		holderTimes_sec = np.asarray(holderTimes_sec) + np.asarray(deltas)
 		holderTimes_utc = [datetime.utcfromtimestamp(x) for x in holderTimes_sec]
 		holderTimes_pt = [x.astimezone(pytz.timezone('US/Pacific')) for x in holderTimes_utc]
 		holderNs = [x for x in dpff_md['pkt_nsec'].ravel()]
+		if args.verbose:
+			print('Formatting time string + nanosecond string')
 		for aTime, aNano in zip(holderTimes_pt, holderNs):
 			allTimesSec.append(aTime.strftime("%Y-%m-%d %H:%M:%S"))
 			allTimesNanos.append(aNano)
 
 # Create a csv from the dataframe
+if args.verbose:
+	print('Creating a dataframe using collected data')
 allData = [[val[0], val[1]] for val in zip(allTimesSec, allTimesNanos)]
 df = pd.DataFrame(allData, columns = ['Time (PT)', 'Extra nanoseconds (ns)'])
 
+if args.verbose:
+	print('Saving file to ' + str(args.save))
 # Save the data to disk 
 with open(args.save, 'w') as f:
 	df.to_csv(args.save)

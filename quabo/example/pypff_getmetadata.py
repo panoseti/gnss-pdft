@@ -13,6 +13,30 @@ import time
 # Takes pff file and get a timestamp - Does not work if there is more than one quabo (7/5/24)
 
 # Stealing from Wei's wr_to_unix code in util/pff.py
+
+
+def wr_to_unix_extra(pkt_tai, tv_sec, tv_sec_long, globalCounter):
+	d = (tv_sec - pkt_tai + 37)%1024
+	if d == 0:
+		return 0 #tv_sec
+	elif d == 1:
+		return -1 #tv_sec - 1
+	elif d == 1023:
+		return 1 #tv_sec + 1
+	else:
+		print('pkttai is ' + str(pkt_tai))
+		print('tv_sec is ' + str(tv_sec))
+		print('extended time is ' + str(tv_sec_long))
+		time_utc = datetime.utcfromtimestamp(tv_sec_long)
+		times_pt = time_utc.astimezone(pytz.timezone('US/Pacific'))
+		print('extended time written as a PT time: ' + str(times_pt.strftime("%Y-%m-%d %H:%M:%S")))
+		print('global counter is ' + str(globalCounter))
+		#return 0
+		raise Exception('WR and Unix times differ by > 1 sec: pkt_tai %d tv_sec %d d %d'%(pkt_tai, tv_sec, d))
+
+
+
+
 def wr_to_unix(pkt_tai, tv_sec):
 	d = (tv_sec - pkt_tai + 37)%1024
 	if d == 0:
@@ -22,8 +46,8 @@ def wr_to_unix(pkt_tai, tv_sec):
 	elif d == 1023:
 		return 1 #tv_sec + 1
 	else:
-		print('pkttai is' + str(pkt_tai))
-		print('tv_sec is' + str(tv_sec))
+		print('pkttai is ' + str(pkt_tai))
+		print('tv_sec is ' + str(tv_sec))
 		#return 0
 		raise Exception('WR and Unix times differ by > 1 sec: pkt_tai %d tv_sec %d d %d'%(pkt_tai, tv_sec, d))
 
@@ -78,7 +102,17 @@ for aFile in allFiles:
 		holderTimes_sec_wr = [x[0] for x in dpff_md['pkt_tai']]
 		if args.verbose:
 			print('Calculating delta between Unix seconds and White rabbits seconds')
-		deltas = [wr_to_unix(val[0], int(val[1]%1024)) for val in zip(holderTimes_sec_wr, holderTimes_sec)]
+		print('length of white rabbit ' + str(len(holderTimes_sec_wr)))
+		print('length of other timestamp ' + str(len(holderTimes_sec)))
+		badIndex = 283108	
+		print('white rabbit timestamp: ' + str(holderTimes_sec_wr[badIndex-5:badIndex+6]))
+		print('other timestamp ' + str([x%1024 for x in holderTimes_sec[badIndex-5:badIndex+6]]))
+		print('delta ' + str(np.asarray(holderTimes_sec_wr[badIndex-5:badIndex+6])) - np.asarray([x%1024 for x in holderTimes_sec[badIndex-5:badIndex+6]]))
+		deltas = []
+		for aDelta in range(len(holderTimes_sec_wr)):
+			#print('ON ROUND '  + str(aDelta))
+			deltas.append(wr_to_unix_extra(holderTimes_sec_wr[aDelta], int(holderTimes_sec[aDelta]%1024), holderTimes_sec[aDelta], aDelta))
+		#deltas = [wr_to_unix_extra(val[0], int(val[1]%1024), val[1]) for val in zip(holderTimes_sec_wr, holderTimes_sec)]
 		if args.verbose:
 			print('Converting UTC time to PT time')
 		holderTimes_sec = np.asarray(holderTimes_sec) + np.asarray(deltas)

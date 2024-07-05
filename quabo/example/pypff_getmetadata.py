@@ -14,16 +14,18 @@ import time
 
 # Stealing from Wei's wr_to_unix code in util/pff.py
 def wr_to_unix(pkt_tai, tv_sec):
-    d = (tv_sec - pkt_tai + 37)%1024
-    if d == 0:
-        return 0 #tv_sec
-    elif d == 1:
-        return -1 #tv_sec - 1
-    elif d == 1023:
-        return 1 #tv_sec + 1
-    else:
-        #return 0
-        raise Exception('WR and Unix times differ by > 1 sec: pkt_tai %d tv_sec %d d %d'%(pkt_tai, tv_sec, d))
+	d = (tv_sec - pkt_tai + 37)%1024
+	if d == 0:
+		return 0 #tv_sec
+	elif d == 1:
+		return -1 #tv_sec - 1
+	elif d == 1023:
+		return 1 #tv_sec + 1
+	else:
+		print('pkttai is' + str(pkt_tai))
+		print('tv_sec is' + str(tv_sec))
+		#return 0
+		raise Exception('WR and Unix times differ by > 1 sec: pkt_tai %d tv_sec %d d %d'%(pkt_tai, tv_sec, d))
 
 
 # Some arguments - takes in a directory + a savefile

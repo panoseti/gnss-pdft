@@ -12,10 +12,9 @@ from datetime import datetime, timezone, timedelta
 
 import numpy as np
 import pandas as pd
-import seaborn_image as isns
 import matplotlib.pyplot as plt
 
-sys.path.append("util")
+sys.path.append("./util")
 
 import panoseti_file_interfaces
 

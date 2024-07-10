@@ -175,7 +175,7 @@ def collect_data(df_refs, device, timeout=10):
         while True:
             # Wait for next packet
             raw_data, parsed_data = ubr.read()
-            pkt_unix_timestamp = datetime.datetime.now()
+            pkt_unix_timestamp = datetime.datetime.utcnow()
             # Add parsed data to cache
             if parsed_data:
                 if parsed_data.identity == 'NAV-TIMEUTC':
@@ -294,7 +294,7 @@ def start_collect(args):
     }
 
     # Start data collection
-    start_timestamp = datetime.datetime.now().isoformat()
+    start_timestamp = datetime.datetime.utcnow().isoformat()
     experiment_dir = get_experiment_dir(start_timestamp, device)
     os.makedirs(experiment_dir, exist_ok=False)
     print('Starting data collection. To stop collection, use CTRL+C.'

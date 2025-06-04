@@ -116,12 +116,14 @@ def set_config(device, cfg=f9t_config):
             if parsed_data is not None:
                 print('\t', parsed_data)
 
-def verify_dataflow(device, cfg=f9t_config):
+def check_dataflow(device, cfg=f9t_config):
     """
     Verify all packets specified in the 'packet_ids' fields of cfg are being received.
     NOTE: for now this is hardcoded for UBX packets.
     @return: True if all packets have been received, False otherwise.
     """
+    check_device(device)
+
     timeout = cfg['timeout (s)']
     ubx_cfg = cfg['protocol']['ubx']
 
@@ -181,12 +183,69 @@ def init(args):
     poll_config(device)
     set_config(device)
     poll_config(device)
-    verified = verify_dataflow(device)     # Thows an Exception if not all packet types are being received.
+    verified = check_dataflow(device)     # Thows an Exception if not all packet types are being received.
     if not verified:
         return False
     print(f"Device initialized. Ready to collect data!")
     f9t_config["init_success"] = True
     return True
+
+""" Test redis connection """
+
+def test_redis(args):
+    """
+    Test Redis connection with specified connection parameters.
+        1. Connect to Redis.
+        2. Perform a series of pipelined write operations to a test hashset.
+        3. Verify whether these writes were successful.
+    """
+    host = args.host
+    port = args.port
+    interval_seconds = args.interval_seconds
+
+
+    # 1. Connect to Redis
+    print(f"Connecting to {host}:{port}")
+    r = redis.Redis(host=host, port=port, db=0)
+
+    start_timestamp = datetime.datetime.now().isoformat()
+    print('Starting redis test:'
+          '\n\tUse CTRL+C to stop.'
+          '\n\tRun "HGETALL TEST" to view test keys on the Redis server'
+          '\n\tStart timestamp: {}\n'.format(start_timestamp))
+
+    failures = 0
+    try:
+        while True:
+            time.sleep(interval_seconds)
+            timestamp = datetime.datetime.now().isoformat()
+            # Start a pipeline
+            pipe = r.pipeline()
+
+            # Queue updates to a test hash: write current timestamp to 10 test keys
+            for i in range(20):
+                field = f't{i}'
+                value = datetime.datetime.now().isoformat()
+                pipe.hset('TEST', field, value)
+
+            # Execute the pipeline and get results
+            results = pipe.execute(raise_on_error=False)
+
+            # Check if each operation succeeded
+            success = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    success.append('0')
+                    failures += 1
+                    print(f"Command {i} failed: {result=}")
+                else:
+                    success.append('1')
+            print(f'[{timestamp}]: success = [{" ".join(success)}]')
+
+    except KeyboardInterrupt:
+        print(f'\nStopping test. {failures=}')
+        pass
+
 
 """ Collect packets and forward to Redis. """
 def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
@@ -242,9 +301,8 @@ def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
 
 def start_collect(args):
     device = args.device
-    check_device(device)
-    verified = verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
-    if not verified:
+    valid_dataflow = check_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    if not valid_dataflow:
         return False
     # Connect to Redis database
     r = redis.Redis(
@@ -270,12 +328,15 @@ def start_collect(args):
         #     save_data(df_refs[data_type], fpath)
         # print('Data saved in {}'.format(experiment_dir))
 
+
+
+
 def cli_handler():
     # create the top-level parser
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(required=True)
 
-    # create parser for the init command
+    # init command parser
     parser_init = subparsers.add_parser('init',
                                         description='Configures u-blox device to start sending the specified packets and verifies they are all being received.')
     parser_init.add_argument('device',
@@ -283,15 +344,35 @@ def cli_handler():
                              type=str)
     parser_init.set_defaults(func=init)
 
-    # create parser for the collect command
+    # collect command parser
     parser_collect = subparsers.add_parser('collect',
                                            description='Start data collection. (To stop collection, use CTRL+C.)')
     parser_collect.add_argument('device',
                                 help='specify the device path. example: /dev/ttyS3',
-                                type=str,
-                                )
+                                type=str)
     parser_collect.set_defaults(func=start_collect)
 
+    # test command parser
+
+    parser_test_redis = subparsers.add_parser('test_redis', description='Test Redis connection')
+    parser_test_redis.add_argument('host',
+                                help='host or ip address of the computer running the Redis server',
+                                type=str,
+                                )
+    parser_test_redis.add_argument('port',
+                                help='port of the Redis server. Default: 6379',
+                                nargs="?",
+                                type=int,
+                                default=6379)
+    parser_test_redis.add_argument("-n", "--interval_seconds",
+                                   # action="store_true",
+                                   help="number of seconds between test write operations. Default: 1 second",
+                                   type=int,
+                                   default=1
+                                   )
+    parser_test_redis.set_defaults(func=test_redis)
+
+    # Dispatch command action
     args = parser.parse_args()
     args.func(args)
 

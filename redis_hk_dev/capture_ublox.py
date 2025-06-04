@@ -10,6 +10,8 @@ import time
 import os
 import datetime
 import argparse
+
+import redis
 from serial import Serial
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
 from utils import *
@@ -19,14 +21,17 @@ packet_data_dir = 'data'
 
 # Configuration for metadata capture from the u-blox ZED-F9T timing chip
 f9t_config = {
-    "timeout (s)": 7,
+    "chip_name": "ZED-F9T",
+    "chip_uid": None,
     "protocol": {
         "ubx": {
             "device": None,
             "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
             "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
         }
-    }
+    },
+    "timeout (s)": 7,
+    "init_success": False,
 }
 
 
@@ -143,14 +148,13 @@ def verify_dataflow(device, cfg=f9t_config):
     raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
 
 """ Redis utility functions """
-def get_rkey(chip_uid, prot_msg, field_name, chip_name='ZED-F9T'):
+def get_rkey(chip_name, chip_uid, prot_msg):
     """
-
+    Returns the hashset key for the given prot_msg and chip
     @param chip_uid: the unique chip ID returned by the `UBX-SEC-UNIQID` message. Must be a 10-digit hex integer.
     @param prot_msg: u-blox protocol message name (e.g. `UBX-TIM-TP`) as specified in the ZED-F9T data sheet.
-    @param field_name: name of a field in the specified `<Data Type>` (e.g. `qErr`)
     @param chip_name: chip name. For now, this will always be `ZED-F9T`, but in the future we may want to record data for other u-blox chip types.
-    @return: Redis key in the following format "UBLOX_{chip_name}_{chip_uid}_{data_type}_{field_name}", where each field is uppercase.
+    @return: Redis hash set key in the following format "UBLOX_{chip_name}_{chip_uid}_{data_type}", where each field is uppercase.
     """
     # Verify the chip_uid is a 10-digit hex number
     chip_uid_emsg = f"chip_uid must be a 10-digit hex integer. Got {chip_uid=}"
@@ -159,164 +163,9 @@ def get_rkey(chip_uid, prot_msg, field_name, chip_name='ZED-F9T'):
         int(chip_uid, 16)   # verifies chip_uid is a valid hex integer
     except ValueError or AssertionError:
         raise ValueError(chip_uid_emsg)
-    return f"UBLOX_{chip_name.upper()}_{chip_uid.upper()}_{prot_msg.upper()}_{field_name.upper()}"
+    return f"UBLOX_{chip_name.upper()}_{chip_uid.upper()}_{prot_msg.upper()}"
 
-def create_empty_df(data_type):
-    """
-    @param data_type: 'NAV-TIMEUTC', 'TIM-TP', or 'MERGED'.
-    @return: empty df with schema of requested data_type.
-    """
-    if data_type == 'NAV-TIMEUTC':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'nano (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC',
-            ]
-        )
-    elif data_type == 'TIM-TP':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
-
-    else:
-        raise ValueError(f'Unrecognized data_type: {data_type}')
-    return df
-
-
-
-def collect_data(df_refs, device, cfg=f9t_config):
-    timeout = cfg['timeout (s)']
-    ubx_cfg = cfg['protocol']['ubx']
-
-    # Cache for saving packets and timestamping their unix arrival time using host computer clock.
-    packet_cache = {}
-    for pkt_id in ubx_cfg['packet_ids']:
-        packet_cache[pkt_id] = {'valid': False, 'timestamp': None, 'parsed_data': None}
-
-    def all_packets_valid():
-        all_valid = True
-        for pkt_id in ubx_cfg['packet_ids']:
-            all_valid &= packet_cache[pkt_id]['valid']
-        return all_valid
-
-    with Serial(device, BAUDRATE, timeout=timeout) as stream:
-        ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        while True:
-            # Wait for next packet (blocking read)
-            raw_data, parsed_data = ubr.read()
-            pkt_unix_timestamp = datetime.datetime.now()
-
-            # Add parsed data to cache
-            if parsed_data:
-                pkt_id = parsed_data.identity
-                if pkt_id in packet_cache:
-                    packet_cache[pkt_id]['valid'] = True
-                    packet_cache[pkt_id]['timestamp'] = pkt_unix_timestamp
-
-                    # UBX-NAV-TIMEUTC
-                    if pkt_id == 'NAV-TIMEUTC':
-                        packet_cache[pkt_id]['parsed_data'] = {
-                            'pkt_unix_timestamp_NAV-TIMEUTC': pkt_unix_timestamp,
-                            'iTOW (ms)':        parsed_data.iTOW,
-                            'tAcc (ns)':        parsed_data.tAcc,
-                            'nano (ns)':        parsed_data.nano,
-                            'year':             parsed_data.year,
-                            'month':            parsed_data.month,
-                            'day':              parsed_data.day,
-                            'hour':             parsed_data.hour,
-                            'min':              parsed_data.min,
-                            'sec':              parsed_data.sec,
-                            'validTOW_flag':    parsed_data.validTOW,
-                            'validWKN_flag':    parsed_data.validWKN,
-                            'validUTC_flag':    parsed_data.validUTC,
-                            'utcStandard_NAV-TIMEUTC':  parsed_data.utcStandard
-                        }
-                    # UBX-TIM-TP
-                    elif pkt_id == 'TIM-TP':
-                        packet_cache[pkt_id]['parsed_data'] = {
-                            'pkt_unix_timestamp_TIM-TP': pkt_unix_timestamp,
-                            'towMS (ms)':           parsed_data.towMS,
-                            'towSubMS':             parsed_data.towSubMS,
-                            'qErr (ps)':            parsed_data.qErr,
-                            'week (weeks)':         parsed_data.week,
-                            'timeBase_flag':        parsed_data.timeBase,
-                            'utc_flag':             parsed_data.utc,
-                            'raim_flag':            parsed_data.raim,
-                            'qErrInvalid_flag':     parsed_data.qErrInvalid,
-                            'timeRefGnss':          parsed_data.timeRefGnss,
-                            'utcStandard_TIM-TP':   parsed_data.utcStandard
-                        }
-
-            # Check if all packet types have been received
-
-            if all_packets_valid():
-                # Verify that packet timestamps differ by no more than 1s.
-                time_diff = abs(packet_cache['TIM-TP']['timestamp'] - packet_cache['NAV-TIMEUTC']['timestamp'])
-                microsec_time_diff = time_diff.seconds * 1e6 + time_diff.microseconds
-                if microsec_time_diff < 1e6:
-                    # Merge packet data into a single dict
-                    merged_data = {
-                        **packet_cache['TIM-TP']['parsed_data'],
-                        **packet_cache['NAV-TIMEUTC']['parsed_data']
-                    }
-                    # merged_data['pkt_unix_timestamp'] = pkt_unix_timestamp # Overwrite individual timestamps with merged timestamp.
-                    # Verify merged data schema matches pandas schema.
-                    merged_keys = set(merged_data.keys())
-                    schema_keys = set(df_refs['MERGED'].columns.tolist())
-                    if merged_keys != schema_keys:
-                        raise KeyError(
-                            'packet keys do not match data schema:'
-                            '\nPacket keys: {}\nSchema: {}.\n '.format(
-                                merged_keys - schema_keys, schema_keys - merged_keys
-                            )
-                        )
-                    # Do write transaction
-                    df_refs['MERGED'].loc[len(df_refs['MERGED'])] = merged_data
-                    df_refs['TIM-TP'].loc[len(df_refs['TIM-TP'])] = packet_cache['TIM-TP']['parsed_data']
-                    df_refs['NAV-TIMEUTC'].loc[len(df_refs['NAV-TIMEUTC'])] = packet_cache['NAV-TIMEUTC']['parsed_data']
-                    # Reset cache
-                    packet_cache['TIM-TP']['valid'] = False
-                    packet_cache['NAV-TIMEUTC']['valid'] = False
-                    print('Collection stats:'
-                          '\tMERGED: {:6d} '
-                          '\tTIM-TP: {:6d} '
-                          '\tNAV-TIMEUTC: {:6d}'
-                          ''.format(len(df_refs['MERGED']), len(df_refs['TIM-TP']), len(df_refs['NAV-TIMEUTC'])), end='\r')
-                else:
-                    # Drop the earlier packet from merge if time diff is too great.
-                    # However, save packet to individual df anyway to prevent data loss.
-                    if packet_cache['TIM-TP']['timestamp'] < packet_cache['NAV-TIMEUTC']['timestamp']:
-                        df_refs['TIM-TP'].loc[len(df_refs['TIM-TP'])] = packet_cache['TIM-TP']['parsed_data']
-                        packet_cache['TIM-TP']['valid'] = False
-                    else:
-                        df_refs['NAV-TIMEUTC'].loc[len(df_refs['NAV-TIMEUTC'])] = packet_cache['NAV-TIMEUTC']['parsed_data']
-                        packet_cache['NAV-TIMEUTC']['valid'] = False
+""" Initialize u-blox device. """
 
 def check_device(device):
     if device is not None:
@@ -336,7 +185,56 @@ def init(args):
     if not verified:
         return False
     print(f"Device initialized. Ready to collect data!")
+    f9t_config["init_success"] = True
     return True
+
+""" Collect packets and forward to Redis. """
+def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
+    timeout = cfg['timeout (s)']
+    ubx_cfg = cfg['protocol']['ubx']
+
+    # Cache for saving packets and timestamping their unix arrival time using host computer clock.
+    packet_cache = {}
+    for pkt_id in ubx_cfg['packet_ids']:
+        packet_cache[pkt_id] = {'valid': False, 'parsed_data': None}
+
+    def all_packets_valid():
+        all_valid = True
+        for pkt_id in ubx_cfg['packet_ids']:
+            all_valid &= packet_cache[pkt_id]['valid']
+        return all_valid
+
+    with (Serial(device, BAUDRATE, timeout=timeout) as stream):
+        ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
+        last_update_time = time.time()
+        while True:
+            # Wait for next packet (blocking read)
+            raw_data, parsed_data = ubr.read()
+
+            # Add parsed data to cache
+            if parsed_data:
+                pkt_id = parsed_data.identity
+                if pkt_id in packet_cache:
+                    packet_cache[pkt_id]['valid'] = True
+                    packet_cache[pkt_id]['parsed_data'] = parsed_data.to_dict()
+
+            curr_time = time.time()  # datetime.datetime.now()
+            # Update Redis if all u-blox hk packets were received
+            if all_packets_valid() or (last_update_time - curr_time > 2):
+                chip_name = cfg['chip_name']
+                chip_uid = cfg['chip_uid']
+                # Pipeline Redis key updates for efficiency.
+                pipe = r.pipeline()
+                #for protocol in cfg['protocol']:
+                for pkt_id in ubx_cfg['packet_ids']:
+                    prot_msg = f"UBX-{pkt_id}" # # just ubx packets for now
+                    rkey = get_rkey(chip_name, chip_uid, prot_msg)
+                    for k, v in packet_cache[pkt_id].items():
+                        pipe.hset(rkey, k, v)
+                    pipe.hset(rkey, 'Computer_UTC', curr_time)
+                    packet_cache[pkt_id]['valid'] = False
+                pipe.execute()
+                last_update_time = curr_time
 
 
 def start_collect(args):
@@ -345,30 +243,29 @@ def start_collect(args):
     verified = verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
     if not verified:
         return False
-    # Create dataframes
-    df_refs = {
-        'NAV-TIMEUTC':  create_empty_df('NAV-TIMEUTC'),
-        'TIM-TP':       create_empty_df('TIM-TP'),
-        'MERGED':       create_empty_df('MERGED')
-    }
+    # Connect to Redis database
+    r = redis.Redis(
+        host="localhost", # TODO
+        port=6379 # TODO
+    )
 
     # Start data collection
-    start_timestamp = datetime.datetime.utcnow().isoformat()
-    experiment_dir = get_experiment_dir(start_timestamp, device)
-    os.makedirs(experiment_dir, exist_ok=False)
+    start_timestamp = datetime.datetime.now().isoformat()
+    # experiment_dir = get_experiment_dir(start_timestamp, device)
+    # os.makedirs(experiment_dir, exist_ok=False)
     print('Starting data collection. To stop collection, use CTRL+C.'
           '\nStart timestamp: {}'.format(start_timestamp))
     try:
-        collect_data(df_refs, device)
+        collect_data(r, device)
     except KeyboardInterrupt:
         print('Stopping data collection.')
         pass
-    finally:
+    # finally:
         # Save data
-        for data_type in df_refs.keys():
-            fpath = f'{experiment_dir}/data-type_{data_type}.start_{start_timestamp}'
-            save_data(df_refs[data_type], fpath)
-        print('Data saved in {}'.format(experiment_dir))
+        # for data_type in df_refs.keys():
+        #     fpath = f'{experiment_dir}/data-type_{data_type}.start_{start_timestamp}'
+        #     save_data(df_refs[data_type], fpath)
+        # print('Data saved in {}'.format(experiment_dir))
 
 def cli_handler():
     # create the top-level parser

@@ -6,32 +6,45 @@ Data collection program for qerr capture.
 See https://github.com/semuconsulting/pyubx2 for documentation on UBX interface documentation.
 """
 
+import os
 import datetime
 import argparse
 from serial import Serial
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
-from qerr_utils import *
+from utils import *
 
 BAUDRATE = 38400
 packet_data_dir = 'data'
 
-capture_ublox_f9t_config = {
-    "timeout (s)": 5,
-    "poll_config": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"],          # default cfg keys to poll
-    "cfg_config": [("CFG_MSGOUT_UBX_TIM_TP_USB", 1), ("CFG_MSGOUT_UBX_NAV_TIMEUTC_USB", 1)], # default cfg settings
+# Configuration for metadata capture from the u-blox ZED-F9T timing chip
+f9t_config = {
+    "timeout (s)": 7,
+    "protocol": {
+        "ubx": {
+            "device": None,
+            "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
+            "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
+        }
+    }
 }
+
 
 def get_experiment_dir(start_timestamp, device):
     device_name = device.split('/')[-1]
     return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
 
-def poll_config(device, config=capture_ublox_f9t_config):
-    """Poll configuration . On startup, should be 0 by default."""
+def poll_config(device, cfg=f9t_config):
+    """
+    Poll the current configuration settings for each cfg_key specified in the cfg dict.
+    On startup, should be 0 by default.
+    """
     layer = POLL_LAYER_RAM
     position = 0
-    msg = UBXMessage.config_poll(layer, position, keys=config['poll_config'])
+    ubx_cfg = cfg['protocol']['ubx']
+
+    msg = UBXMessage.config_poll(layer, position, keys=ubx_cfg['cfg_keys'])
     print('Polling configuration:')
-    with Serial(device, BAUDRATE, timeout=config['timeout (s)']) as stream:
+    with Serial(device, BAUDRATE, timeout=ubx_cfg['timeout (s)']) as stream:
         stream.write(msg.serialize())
         ubr_poll_status = UBXReader(stream, protfilter=UBX_PROTOCOL)
         raw_data, parsed_data = ubr_poll_status.read()
@@ -39,15 +52,19 @@ def poll_config(device, config=capture_ublox_f9t_config):
             print('\t', parsed_data)
 
 
-def set_config(device, config=capture_ublox_f9t_config):
+def set_config(device, cfg=f9t_config):
+    """Tell chip to start sending metadata packets for each cfg_key"""
     layer = SET_LAYER_RAM
     transaction = TXN_NONE
+    timeout = cfg['timeout (s)']
+    ubx_cfg = cfg['protocol']['ubx']
 
-    cfgData = config['cfg_config'] # KV config pairs to write. Unspecified values are initialized to 0.
+    # Tell chip to start sending metadata packets for each cfg_key. Note: Unspecified keys are initialized to 0.
+    cfgData = [(cfg_key, 1) for cfg_key in ubx_cfg['cfg_keys']]  # 1 = start sending packets of type cfg_key.
     msg = UBXMessage.config_set(layer, transaction, cfgData)
-    print('Updating configuration:')
-    # print(msg)
-    with Serial(device, BAUDRATE, timeout=config['timeout (s)']) as stream:
+
+    with Serial(device, BAUDRATE, timeout=timeout) as stream:
+        print('Updating configuration:')
         stream.write(msg.serialize())
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
         for i in range(1):
@@ -55,30 +72,36 @@ def set_config(device, config=capture_ublox_f9t_config):
             if parsed_data is not None:
                 print('\t', parsed_data)
 
-def verify_dataflow(device, timeout=3):
-    """Verify packets of desired types are being received."""
-    packet_id_flags = {
-        'NAV-TIMEUTC': False,
-        'TIM-TP': False
-    }
+def verify_dataflow(device, cfg=f9t_config):
+    """
+    Verify all packets specified in the 'packet_ids' fields of cfg are being received.
+    NOTE: for now this is hardcoded for UBX packets.
+    @return: True if all packets have been received, False otherwise.
+    """
+    timeout = cfg['timeout (s)']
+    ubx_cfg = cfg['protocol']['ubx']
+
+    # Initialize dict for recording whether we're receiving packets of each type.
+    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
+
     try:
         with Serial(device, BAUDRATE, timeout=timeout) as stream:
             ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
             print('Verifying packets are being received... (If stuck at this step, re-run with the "init" option.)')
 
-            for i in range(10):
-                raw_data, parsed_data = ubr.read()
+            for i in range(timeout):  # assumes config packets are send every second -> waits for timeout seconds.
+                raw_data, parsed_data = ubr.read() # blocking read operation -> waits for next UBX_PROTOCOL packet.
                 if parsed_data:
-                    for packet_id in packet_id_flags.keys():
-                        if parsed_data.identity == packet_id:
-                            packet_id_flags[packet_id] = True
-                if all(packet_id_flags.values()):
+                    for pkt_id in pkt_id_flags.keys():
+                        if parsed_data.identity == pkt_id:
+                            pkt_id_flags[pkt_id] = True
+                if all(pkt_id_flags.values()):
                     print('All packets are being received.\n')
                     return True
     except KeyboardInterrupt:
         print('Interrupted by KeyboardInterrupt.')
         return False
-    raise Exception(f'Not all packets are being received. Check the following for details: {packet_id_flags}')
+    raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
 
 
 def create_empty_df(data_type):
@@ -162,26 +185,27 @@ def create_empty_df(data_type):
 
 
 
-def collect_data(df_refs, device, timeout=10):
+def collect_data(df_refs, device, cfg=f9t_config):
+    timeout = cfg['timeout (s)']
+    ubx_cfg = cfg['protocol']['ubx']
+
+    # Cache for saving packets and timestamping their unix arrival time using host computer clock.
+    packet_cache = {}
+    for pkt_id in ubx_cfg['packet_ids']:
+        packet_cache[pkt_id] = {
+            'valid': False,
+            'timestamp': None,
+            'parsed_data': None
+        }
+    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
+
     with Serial(device, BAUDRATE, timeout=timeout) as stream:
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        # Cache for saving packets and timestamping their arrival.
-        packet_cache = {
-            'NAV-TIMEUTC': {
-                'valid': False,
-                'timestamp': None,
-                'parsed_data': None,
-            },
-            'TIM-TP': {
-                'valid': False,
-                'timestamp': None,
-                'parsed_data': None,
-            }
-        }
         while True:
-            # Wait for next packet
+            # Wait for next packet (blocking read)
             raw_data, parsed_data = ubr.read()
-            pkt_unix_timestamp = datetime.datetime.utcnow()
+            pkt_unix_timestamp = datetime.datetime.now()
+
             # Add parsed data to cache
             if parsed_data:
                 if parsed_data.identity == 'NAV-TIMEUTC':
@@ -280,10 +304,11 @@ def init(args):
     poll_config(device)
     set_config(device)
     poll_config(device)
-    verified = verify_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    verified = verify_dataflow(device)     # Thows an Exception if not all packet types are being received.
     if not verified:
         return False
     print(f"Device initialized. Ready to collect data!")
+    return True
 
 
 def start_collect(args):

@@ -6,6 +6,7 @@ Data collection program for qerr capture.
 See https://github.com/semuconsulting/pyubx2 for documentation on UBX interface documentation.
 """
 
+import time
 import os
 import datetime
 import argparse
@@ -32,6 +33,44 @@ f9t_config = {
 def get_experiment_dir(start_timestamp, device):
     device_name = device.split('/')[-1]
     return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
+
+"""u-blox utility functions"""
+def get_f9t_unique_id(device):
+    """
+    Poll the unique ID of the f9t chip.
+    We need to write a custom poll command because the pyubx2 library doesn't implement this cfg message.
+    """
+    # UBX-SEC-UNIQID poll message (class 0x27, id 0x03)
+    UBX_UNIQID_POLL = bytes([0xB5, 0x62, 0x27, 0x03, 0x00, 0x00, 0x2A, 0x8F])
+    with Serial(device, BAUDRATE, timeout=2) as stream:
+        ubr = UBXReader(stream)
+        # Flush any existing input
+        stream.reset_input_buffer()
+        print("Sending UBX-SEC-UNIQID poll...")
+        stream.write(UBX_UNIQID_POLL)
+        stream.flush()
+        # Wait for and parse the response
+        start_time = time.time()
+        while True:
+            if time.time() - start_time > 5:
+                print("Timeout waiting for response.")
+                break
+            raw_data, parsed_data = ubr.read()
+            if parsed_data and parsed_data.identity == 'SEC-UNIQID':
+                # The unique ID is in parsed_data.uniqueId (should be bytes)
+                unique_id = parsed_data.uniqueId.hex()
+                print(f"Unique ID: {unique_id}")
+                return unique_id
+            # # Look for UBX-SEC-UNIQID response (class 0x27, id 0x03)
+            # if raw_data and raw_data[2] == 0x27 and raw_data[3] == 0x03:
+            #     # Payload is at raw_data[6:-2], uniqueId is bytes 4:36 of payload
+            #     payload = raw_data[6:-2]
+            #     if len(payload) >= 36:
+            #         unique_id = payload[4:36].hex()
+            #         print(f"ZED-F9T Unique ID: {unique_id}")
+            #     else:
+            #         print("Received payload too short.")
+            #     break
 
 def poll_config(device, cfg=f9t_config):
     """
@@ -103,6 +142,24 @@ def verify_dataflow(device, cfg=f9t_config):
         return False
     raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
 
+""" Redis utility functions """
+def get_rkey(chip_uid, prot_msg, field_name, chip_name='ZED-F9T'):
+    """
+
+    @param chip_uid: the unique chip ID returned by the `UBX-SEC-UNIQID` message. Must be a 10-digit hex integer.
+    @param prot_msg: u-blox protocol message name (e.g. `UBX-TIM-TP`) as specified in the ZED-F9T data sheet.
+    @param field_name: name of a field in the specified `<Data Type>` (e.g. `qErr`)
+    @param chip_name: chip name. For now, this will always be `ZED-F9T`, but in the future we may want to record data for other u-blox chip types.
+    @return: Redis key in the following format "UBLOX_{chip_name}_{chip_uid}_{data_type}_{field_name}", where each field is uppercase.
+    """
+    # Verify the chip_uid is a 10-digit hex number
+    chip_uid_emsg = f"chip_uid must be a 10-digit hex integer. Got {chip_uid=}"
+    try:
+        assert len(chip_uid) == 10, chip_uid_emsg
+        int(chip_uid, 16)   # verifies chip_uid is a valid hex integer
+    except ValueError or AssertionError:
+        raise ValueError(chip_uid_emsg)
+    return f"UBLOX_{chip_name.upper()}_{chip_uid.upper()}_{prot_msg.upper()}_{field_name.upper()}"
 
 def create_empty_df(data_type):
     """
@@ -147,38 +204,6 @@ def create_empty_df(data_type):
             ]
         )
 
-    elif data_type == 'MERGED':
-        df = pd.DataFrame(
-            columns=[
-                'pkt_unix_timestamp_TIM-TP',
-                'pkt_unix_timestamp_NAV-TIMEUTC',
-                # NAV-TIMEUTC data
-                'iTOW (ms)',
-                'tAcc (ns)',
-                'nano (ns)',
-                'year',
-                'month',
-                'day',
-                'hour',
-                'min',
-                'sec',
-                'validTOW_flag',
-                'validWKN_flag',
-                'validUTC_flag',
-                'utcStandard_NAV-TIMEUTC',
-                # TIM-TP data
-                'towMS (ms)',  # towMS (unit: ms)
-                'towSubMS',  # towSubMS (unit: ms, scale: 2^-32)
-                'qErr (ps)',  # qErr (unit: ps)
-                'week (weeks)',  # week (unit: weeks)
-                'timeBase_flag',
-                'utc_flag',
-                'raim_flag',
-                'qErrInvalid_flag',
-                'timeRefGnss',
-                'utcStandard_TIM-TP'
-            ]
-        )
     else:
         raise ValueError(f'Unrecognized data_type: {data_type}')
     return df
@@ -192,12 +217,13 @@ def collect_data(df_refs, device, cfg=f9t_config):
     # Cache for saving packets and timestamping their unix arrival time using host computer clock.
     packet_cache = {}
     for pkt_id in ubx_cfg['packet_ids']:
-        packet_cache[pkt_id] = {
-            'valid': False,
-            'timestamp': None,
-            'parsed_data': None
-        }
-    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
+        packet_cache[pkt_id] = {'valid': False, 'timestamp': None, 'parsed_data': None}
+
+    def all_packets_valid():
+        all_valid = True
+        for pkt_id in ubx_cfg['packet_ids']:
+            all_valid &= packet_cache[pkt_id]['valid']
+        return all_valid
 
     with Serial(device, BAUDRATE, timeout=timeout) as stream:
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
@@ -208,46 +234,48 @@ def collect_data(df_refs, device, cfg=f9t_config):
 
             # Add parsed data to cache
             if parsed_data:
-                if parsed_data.identity == 'NAV-TIMEUTC':
-                    # UBX-NAV-TIMEUTC
-                    packet_cache['NAV-TIMEUTC']['valid'] = True
-                    packet_cache['NAV-TIMEUTC']['timestamp'] = pkt_unix_timestamp
-                    packet_cache['NAV-TIMEUTC']['parsed_data'] = {
-                        'pkt_unix_timestamp_NAV-TIMEUTC': pkt_unix_timestamp,
-                        'iTOW (ms)':        parsed_data.iTOW,
-                        'tAcc (ns)':        parsed_data.tAcc,
-                        'nano (ns)':        parsed_data.nano,
-                        'year':             parsed_data.year,
-                        'month':            parsed_data.month,
-                        'day':              parsed_data.day,
-                        'hour':             parsed_data.hour,
-                        'min':              parsed_data.min,
-                        'sec':              parsed_data.sec,
-                        'validTOW_flag':    parsed_data.validTOW,
-                        'validWKN_flag':    parsed_data.validWKN,
-                        'validUTC_flag':    parsed_data.validUTC,
-                        'utcStandard_NAV-TIMEUTC':  parsed_data.utcStandard
-                    }
-                elif parsed_data.identity == 'TIM-TP':
-                    # UBX-TIM-TP
-                    packet_cache['TIM-TP']['valid'] = True
-                    packet_cache['TIM-TP']['timestamp'] = pkt_unix_timestamp
-                    packet_cache['TIM-TP']['parsed_data'] = {
-                        'pkt_unix_timestamp_TIM-TP': pkt_unix_timestamp,
-                        'towMS (ms)':           parsed_data.towMS,
-                        'towSubMS':             parsed_data.towSubMS,
-                        'qErr (ps)':            parsed_data.qErr,
-                        'week (weeks)':         parsed_data.week,
-                        'timeBase_flag':        parsed_data.timeBase,
-                        'utc_flag':             parsed_data.utc,
-                        'raim_flag':            parsed_data.raim,
-                        'qErrInvalid_flag':     parsed_data.qErrInvalid,
-                        'timeRefGnss':          parsed_data.timeRefGnss,
-                        'utcStandard_TIM-TP':   parsed_data.utcStandard
-                    }
+                pkt_id = parsed_data.identity
+                if pkt_id in packet_cache:
+                    packet_cache[pkt_id]['valid'] = True
+                    packet_cache[pkt_id]['timestamp'] = pkt_unix_timestamp
 
-            # Check if packet cache is full.
-            if packet_cache['TIM-TP']['valid'] and packet_cache['NAV-TIMEUTC']['valid']:
+                    # UBX-NAV-TIMEUTC
+                    if pkt_id == 'NAV-TIMEUTC':
+                        packet_cache[pkt_id]['parsed_data'] = {
+                            'pkt_unix_timestamp_NAV-TIMEUTC': pkt_unix_timestamp,
+                            'iTOW (ms)':        parsed_data.iTOW,
+                            'tAcc (ns)':        parsed_data.tAcc,
+                            'nano (ns)':        parsed_data.nano,
+                            'year':             parsed_data.year,
+                            'month':            parsed_data.month,
+                            'day':              parsed_data.day,
+                            'hour':             parsed_data.hour,
+                            'min':              parsed_data.min,
+                            'sec':              parsed_data.sec,
+                            'validTOW_flag':    parsed_data.validTOW,
+                            'validWKN_flag':    parsed_data.validWKN,
+                            'validUTC_flag':    parsed_data.validUTC,
+                            'utcStandard_NAV-TIMEUTC':  parsed_data.utcStandard
+                        }
+                    # UBX-TIM-TP
+                    elif pkt_id == 'TIM-TP':
+                        packet_cache[pkt_id]['parsed_data'] = {
+                            'pkt_unix_timestamp_TIM-TP': pkt_unix_timestamp,
+                            'towMS (ms)':           parsed_data.towMS,
+                            'towSubMS':             parsed_data.towSubMS,
+                            'qErr (ps)':            parsed_data.qErr,
+                            'week (weeks)':         parsed_data.week,
+                            'timeBase_flag':        parsed_data.timeBase,
+                            'utc_flag':             parsed_data.utc,
+                            'raim_flag':            parsed_data.raim,
+                            'qErrInvalid_flag':     parsed_data.qErrInvalid,
+                            'timeRefGnss':          parsed_data.timeRefGnss,
+                            'utcStandard_TIM-TP':   parsed_data.utcStandard
+                        }
+
+            # Check if all packet types have been received
+
+            if all_packets_valid():
                 # Verify that packet timestamps differ by no more than 1s.
                 time_diff = abs(packet_cache['TIM-TP']['timestamp'] - packet_cache['NAV-TIMEUTC']['timestamp'])
                 microsec_time_diff = time_diff.seconds * 1e6 + time_diff.microseconds
@@ -342,17 +370,16 @@ def start_collect(args):
             save_data(df_refs[data_type], fpath)
         print('Data saved in {}'.format(experiment_dir))
 
-
-if __name__ == '__main__':
+def cli_handler():
     # create the top-level parser
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(required=True)
 
     # create parser for the init command
     parser_init = subparsers.add_parser('init',
-                                        description='Configure device and verify NAV-TIMEUTC and TIM-TP packets are being received.')
+                                        description='Configures u-blox device to start sending the specified packets and verifies they are all being received.')
     parser_init.add_argument('device',
-                             help='specify the device path. example: /dev/ttyS3',
+                             help='specify the device file path. e.g. /dev/ttyS3',
                              type=str)
     parser_init.set_defaults(func=init)
 
@@ -367,3 +394,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.func(args)
+
+if __name__ == '__main__':
+    cli_handler()

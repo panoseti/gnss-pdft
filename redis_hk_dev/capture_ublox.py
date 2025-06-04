@@ -204,38 +204,41 @@ def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
             all_valid &= packet_cache[pkt_id]['valid']
         return all_valid
 
+    def flush_packet_cache():
+        curr_time = time.time()  # datetime.datetime.now()
+        chip_name = cfg['chip_name']
+        chip_uid = cfg['chip_uid']
+        # Pipeline Redis key updates for efficiency.
+        pipe = r.pipeline()
+        for pkt_id in ubx_cfg['packet_ids']:
+            prot_msg = f"UBX-{pkt_id}"  # # just ubx packets for now
+            rkey = get_rkey(chip_name, chip_uid, prot_msg)
+            for k, v in packet_cache[pkt_id].items():
+                pipe.hset(rkey, k, v)
+            pipe.hset(rkey, 'Computer_UTC', curr_time)
+            packet_cache[pkt_id]['valid'] = False # invalidate packet cache entry
+        pipe.execute()
+
     with (Serial(device, BAUDRATE, timeout=timeout) as stream):
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        last_update_time = time.time()
         while True:
             # Wait for next packet (blocking read)
             raw_data, parsed_data = ubr.read()
 
             # Add parsed data to cache
-            if parsed_data:
-                pkt_id = parsed_data.identity
-                if pkt_id in packet_cache:
-                    packet_cache[pkt_id]['valid'] = True
-                    packet_cache[pkt_id]['parsed_data'] = parsed_data.to_dict()
+            if parsed_data is not None:
+                pkt_id_curr = parsed_data.identity
+                # Add new packet to packet cache
+                if pkt_id_curr in packet_cache:
+                    # First flush cache to Redis if the current packet will overwrite cached data
+                    if packet_cache[pkt_id_curr]['valid']:
+                        flush_packet_cache()
+                    packet_cache[pkt_id_curr]['valid'] = True
+                    packet_cache[pkt_id_curr]['parsed_data'] = parsed_data.to_dict()
 
-            curr_time = time.time()  # datetime.datetime.now()
-            # Update Redis if all u-blox hk packets were received
-            if all_packets_valid() or (last_update_time - curr_time > 2):
-                chip_name = cfg['chip_name']
-                chip_uid = cfg['chip_uid']
-                # Pipeline Redis key updates for efficiency.
-                pipe = r.pipeline()
-                #for protocol in cfg['protocol']:
-                for pkt_id in ubx_cfg['packet_ids']:
-                    prot_msg = f"UBX-{pkt_id}" # # just ubx packets for now
-                    rkey = get_rkey(chip_name, chip_uid, prot_msg)
-                    for k, v in packet_cache[pkt_id].items():
-                        pipe.hset(rkey, k, v)
-                    pipe.hset(rkey, 'Computer_UTC', curr_time)
-                    packet_cache[pkt_id]['valid'] = False
-                pipe.execute()
-                last_update_time = curr_time
-
+            # Flush cache to Redis if all u-blox hk were received
+            if all_packets_valid():
+                flush_packet_cache()
 
 def start_collect(args):
     device = args.device

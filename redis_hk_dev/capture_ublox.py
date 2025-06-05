@@ -203,10 +203,12 @@ def test_redis(args):
     port = args.port
     interval_seconds = args.interval_seconds
 
-
     # 1. Connect to Redis
     print(f"Connecting to {host}:{port}")
     r = redis.Redis(host=host, port=port, db=0)
+    if not r.ping():
+        raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+    # print(r)
 
     start_timestamp = datetime.datetime.now().isoformat()
     print('Starting redis test:'

@@ -14,7 +14,7 @@ import argparse
 import redis
 from serial import Serial
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
-from utils import *
+#from utils import *
 
 BAUDRATE = 38400
 packet_data_dir = 'data'

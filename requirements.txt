@@ -3,3 +3,13 @@ coverage>=4.0
 cython==3.1.1
 protobuf>=6.30.0,<7.0.0
 wheel>=0.29
+
+# ublox control requirements
+pyserial>=3.5
+pyubx2>=1.2.43
+redis>=3.5.3
+
+# data analysis requirements
+seaborn>=0.13.2
+matplotlib>=3.8.4
+pandas>=2.3.0

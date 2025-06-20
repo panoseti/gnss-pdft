@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import route_guide_pb2 as route__guide__pb2
+import ublox_control_pb2 as ublox__control__pb2
 
 GRPC_GENERATED_VERSION = '1.73.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in route_guide_pb2_grpc.py depends on'
+        + f' but the generated code in ublox_control_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,24 +36,24 @@ class RouteGuideStub(object):
             channel: A grpc.Channel.
         """
         self.GetFeature = channel.unary_unary(
-                '/routeguide.RouteGuide/GetFeature',
-                request_serializer=route__guide__pb2.Point.SerializeToString,
-                response_deserializer=route__guide__pb2.Feature.FromString,
+                '/ubloxcontrol.RouteGuide/GetFeature',
+                request_serializer=ublox__control__pb2.Point.SerializeToString,
+                response_deserializer=ublox__control__pb2.Feature.FromString,
                 _registered_method=True)
         self.ListFeatures = channel.unary_stream(
-                '/routeguide.RouteGuide/ListFeatures',
-                request_serializer=route__guide__pb2.Rectangle.SerializeToString,
-                response_deserializer=route__guide__pb2.Feature.FromString,
+                '/ubloxcontrol.RouteGuide/ListFeatures',
+                request_serializer=ublox__control__pb2.Rectangle.SerializeToString,
+                response_deserializer=ublox__control__pb2.Feature.FromString,
                 _registered_method=True)
         self.RecordRoute = channel.stream_unary(
-                '/routeguide.RouteGuide/RecordRoute',
-                request_serializer=route__guide__pb2.Point.SerializeToString,
-                response_deserializer=route__guide__pb2.RouteSummary.FromString,
+                '/ubloxcontrol.RouteGuide/RecordRoute',
+                request_serializer=ublox__control__pb2.Point.SerializeToString,
+                response_deserializer=ublox__control__pb2.RouteSummary.FromString,
                 _registered_method=True)
         self.RouteChat = channel.stream_stream(
-                '/routeguide.RouteGuide/RouteChat',
-                request_serializer=route__guide__pb2.RouteNote.SerializeToString,
-                response_deserializer=route__guide__pb2.RouteNote.FromString,
+                '/ubloxcontrol.RouteGuide/RouteChat',
+                request_serializer=ublox__control__pb2.RouteNote.SerializeToString,
+                response_deserializer=ublox__control__pb2.RouteNote.FromString,
                 _registered_method=True)
 
 
@@ -110,29 +110,29 @@ def add_RouteGuideServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetFeature': grpc.unary_unary_rpc_method_handler(
                     servicer.GetFeature,
-                    request_deserializer=route__guide__pb2.Point.FromString,
-                    response_serializer=route__guide__pb2.Feature.SerializeToString,
+                    request_deserializer=ublox__control__pb2.Point.FromString,
+                    response_serializer=ublox__control__pb2.Feature.SerializeToString,
             ),
             'ListFeatures': grpc.unary_stream_rpc_method_handler(
                     servicer.ListFeatures,
-                    request_deserializer=route__guide__pb2.Rectangle.FromString,
-                    response_serializer=route__guide__pb2.Feature.SerializeToString,
+                    request_deserializer=ublox__control__pb2.Rectangle.FromString,
+                    response_serializer=ublox__control__pb2.Feature.SerializeToString,
             ),
             'RecordRoute': grpc.stream_unary_rpc_method_handler(
                     servicer.RecordRoute,
-                    request_deserializer=route__guide__pb2.Point.FromString,
-                    response_serializer=route__guide__pb2.RouteSummary.SerializeToString,
+                    request_deserializer=ublox__control__pb2.Point.FromString,
+                    response_serializer=ublox__control__pb2.RouteSummary.SerializeToString,
             ),
             'RouteChat': grpc.stream_stream_rpc_method_handler(
                     servicer.RouteChat,
-                    request_deserializer=route__guide__pb2.RouteNote.FromString,
-                    response_serializer=route__guide__pb2.RouteNote.SerializeToString,
+                    request_deserializer=ublox__control__pb2.RouteNote.FromString,
+                    response_serializer=ublox__control__pb2.RouteNote.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'routeguide.RouteGuide', rpc_method_handlers)
+            'ubloxcontrol.RouteGuide', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('routeguide.RouteGuide', rpc_method_handlers)
+    server.add_registered_method_handlers('ubloxcontrol.RouteGuide', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -154,9 +154,9 @@ class RouteGuide(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/routeguide.RouteGuide/GetFeature',
-            route__guide__pb2.Point.SerializeToString,
-            route__guide__pb2.Feature.FromString,
+            '/ubloxcontrol.RouteGuide/GetFeature',
+            ublox__control__pb2.Point.SerializeToString,
+            ublox__control__pb2.Feature.FromString,
             options,
             channel_credentials,
             insecure,
@@ -181,9 +181,9 @@ class RouteGuide(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/routeguide.RouteGuide/ListFeatures',
-            route__guide__pb2.Rectangle.SerializeToString,
-            route__guide__pb2.Feature.FromString,
+            '/ubloxcontrol.RouteGuide/ListFeatures',
+            ublox__control__pb2.Rectangle.SerializeToString,
+            ublox__control__pb2.Feature.FromString,
             options,
             channel_credentials,
             insecure,
@@ -208,9 +208,9 @@ class RouteGuide(object):
         return grpc.experimental.stream_unary(
             request_iterator,
             target,
-            '/routeguide.RouteGuide/RecordRoute',
-            route__guide__pb2.Point.SerializeToString,
-            route__guide__pb2.RouteSummary.FromString,
+            '/ubloxcontrol.RouteGuide/RecordRoute',
+            ublox__control__pb2.Point.SerializeToString,
+            ublox__control__pb2.RouteSummary.FromString,
             options,
             channel_credentials,
             insecure,
@@ -235,9 +235,9 @@ class RouteGuide(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/routeguide.RouteGuide/RouteChat',
-            route__guide__pb2.RouteNote.SerializeToString,
-            route__guide__pb2.RouteNote.FromString,
+            '/ubloxcontrol.RouteGuide/RouteChat',
+            ublox__control__pb2.RouteNote.SerializeToString,
+            ublox__control__pb2.RouteNote.FromString,
             options,
             channel_credentials,
             insecure,

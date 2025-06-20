@@ -1,6 +1,10 @@
 
+
 """
-Utility functions for qerr_utils
+
+Server-side code to handle GNSS control resources.
+Run on the computer
+
 """
 import os
 import json
@@ -52,7 +56,3 @@ def make_json_config():
         print(f"created {capture_ublox_config_file}")
     else:
         print(f"{capture_ublox_config_file} already exists")
-
-
-def plot():
-    ...

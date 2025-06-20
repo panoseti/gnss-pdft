@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright 2015 gRPC authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +23,6 @@ protoc.main(
         "-I../protos",
         "--python_out=.",
         "--grpc_python_out=.",
-        "../protos/route_guide.proto",
+        "../protos/ublox_control.proto",
     )
 )

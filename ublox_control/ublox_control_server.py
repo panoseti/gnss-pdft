@@ -1,17 +1,4 @@
-# Copyright 2015 gRPC authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""The Python implementation of the gRPC route guide server."""
+"""The Python implementation of the gRPC ublox control server."""
 
 from concurrent import futures
 import logging
@@ -19,9 +6,9 @@ import math
 import time
 
 import grpc
-import route_guide_pb2
-import route_guide_pb2_grpc
-import route_guide_resources
+import ublox_control_pb2
+import ublox_control_pb2_grpc
+import ublox_control_resources
 
 
 def get_feature(feature_db, point):
@@ -56,16 +43,16 @@ def get_distance(start, end):
     return R * c
 
 
-class RouteGuideServicer(route_guide_pb2_grpc.RouteGuideServicer):
+class RouteGuideServicer(ublox_control_pb2_grpc.RouteGuideServicer):
     """Provides methods that implement functionality of route guide server."""
 
     def __init__(self):
-        self.db = route_guide_resources.read_route_guide_database()
+        self.db = ublox_control_resources.read_route_guide_database() # TODO: change
 
     def GetFeature(self, request, context):
         feature = get_feature(self.db, request)
         if feature is None:
-            return route_guide_pb2.Feature(name="", location=request)
+            return ublox_control_pb2.Feature(name="", location=request)
         else:
             return feature
 
@@ -99,7 +86,7 @@ class RouteGuideServicer(route_guide_pb2_grpc.RouteGuideServicer):
             prev_point = point
 
         elapsed_time = time.time() - start_time
-        return route_guide_pb2.RouteSummary(
+        return ublox_control_pb2.RouteSummary(
             point_count=point_count,
             feature_count=feature_count,
             distance=int(distance),
@@ -117,7 +104,7 @@ class RouteGuideServicer(route_guide_pb2_grpc.RouteGuideServicer):
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    route_guide_pb2_grpc.add_RouteGuideServicer_to_server(
+    ublox_control_pb2_grpc.add_RouteGuideServicer_to_server(
         RouteGuideServicer(), server
     )
     server.add_insecure_port("[::]:50051")

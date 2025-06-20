@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class RouteGuideStub(object):
+class UbloxControlStub(object):
     """Interface exported by the server.
     """
 
@@ -36,28 +36,28 @@ class RouteGuideStub(object):
             channel: A grpc.Channel.
         """
         self.GetFeature = channel.unary_unary(
-                '/ubloxcontrol.RouteGuide/GetFeature',
+                '/ubloxcontrol.UbloxControl/GetFeature',
                 request_serializer=ublox__control__pb2.Point.SerializeToString,
                 response_deserializer=ublox__control__pb2.Feature.FromString,
                 _registered_method=True)
         self.ListFeatures = channel.unary_stream(
-                '/ubloxcontrol.RouteGuide/ListFeatures',
+                '/ubloxcontrol.UbloxControl/ListFeatures',
                 request_serializer=ublox__control__pb2.Rectangle.SerializeToString,
                 response_deserializer=ublox__control__pb2.Feature.FromString,
                 _registered_method=True)
         self.RecordRoute = channel.stream_unary(
-                '/ubloxcontrol.RouteGuide/RecordRoute',
+                '/ubloxcontrol.UbloxControl/RecordRoute',
                 request_serializer=ublox__control__pb2.Point.SerializeToString,
                 response_deserializer=ublox__control__pb2.RouteSummary.FromString,
                 _registered_method=True)
         self.RouteChat = channel.stream_stream(
-                '/ubloxcontrol.RouteGuide/RouteChat',
+                '/ubloxcontrol.UbloxControl/RouteChat',
                 request_serializer=ublox__control__pb2.RouteNote.SerializeToString,
                 response_deserializer=ublox__control__pb2.RouteNote.FromString,
                 _registered_method=True)
 
 
-class RouteGuideServicer(object):
+class UbloxControlServicer(object):
     """Interface exported by the server.
     """
 
@@ -106,7 +106,7 @@ class RouteGuideServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_RouteGuideServicer_to_server(servicer, server):
+def add_UbloxControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetFeature': grpc.unary_unary_rpc_method_handler(
                     servicer.GetFeature,
@@ -130,13 +130,13 @@ def add_RouteGuideServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ubloxcontrol.RouteGuide', rpc_method_handlers)
+            'ubloxcontrol.UbloxControl', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ubloxcontrol.RouteGuide', rpc_method_handlers)
+    server.add_registered_method_handlers('ubloxcontrol.UbloxControl', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class RouteGuide(object):
+class UbloxControl(object):
     """Interface exported by the server.
     """
 
@@ -154,7 +154,7 @@ class RouteGuide(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ubloxcontrol.RouteGuide/GetFeature',
+            '/ubloxcontrol.UbloxControl/GetFeature',
             ublox__control__pb2.Point.SerializeToString,
             ublox__control__pb2.Feature.FromString,
             options,
@@ -181,7 +181,7 @@ class RouteGuide(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ubloxcontrol.RouteGuide/ListFeatures',
+            '/ubloxcontrol.UbloxControl/ListFeatures',
             ublox__control__pb2.Rectangle.SerializeToString,
             ublox__control__pb2.Feature.FromString,
             options,
@@ -208,7 +208,7 @@ class RouteGuide(object):
         return grpc.experimental.stream_unary(
             request_iterator,
             target,
-            '/ubloxcontrol.RouteGuide/RecordRoute',
+            '/ubloxcontrol.UbloxControl/RecordRoute',
             ublox__control__pb2.Point.SerializeToString,
             ublox__control__pb2.RouteSummary.FromString,
             options,
@@ -235,7 +235,7 @@ class RouteGuide(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/ubloxcontrol.RouteGuide/RouteChat',
+            '/ubloxcontrol.UbloxControl/RouteChat',
             ublox__control__pb2.RouteNote.SerializeToString,
             ublox__control__pb2.RouteNote.FromString,
             options,

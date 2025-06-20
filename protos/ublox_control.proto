@@ -8,7 +8,7 @@ option objc_class_prefix = "UBXCTL";
 package ubloxcontrol;
 
 // Interface exported by the server.
-service RouteGuide {
+service UbloxControl {
   // A simple RPC.
   //
   // Obtains the feature at a given position.

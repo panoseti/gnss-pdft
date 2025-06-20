@@ -43,8 +43,8 @@ def get_distance(start, end):
     return R * c
 
 
-class RouteGuideServicer(ublox_control_pb2_grpc.RouteGuideServicer):
-    """Provides methods that implement functionality of route guide server."""
+class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
+    """Provides methods that implement functionality of an u-blox control server."""
 
     def __init__(self):
         self.db = ublox_control_resources.read_route_guide_database() # TODO: change
@@ -104,8 +104,8 @@ class RouteGuideServicer(ublox_control_pb2_grpc.RouteGuideServicer):
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    ublox_control_pb2_grpc.add_RouteGuideServicer_to_server(
-        RouteGuideServicer(), server
+    ublox_control_pb2_grpc.add_UbloxControlServicer_to_server(
+        UbloxControlServicer(), server
     )
     server.add_insecure_port("[::]:50051")
     server.start()

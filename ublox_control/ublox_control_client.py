@@ -120,7 +120,8 @@ def run():
     # used in circumstances in which the with statement does not fit the needs
     # of the code.
     with grpc.insecure_channel("localhost:50051") as channel:
-        stub = ublox_control_pb2_grpc.RouteGuideStub(channel)
+    #with grpc.insecure_channel("10.0.0.60:50051") as channel:
+        stub = ublox_control_pb2_grpc.UbloxControlStub(channel)
         print("-------------- GetFeature --------------")
         guide_get_feature(stub)
         print("-------------- ListFeatures --------------")

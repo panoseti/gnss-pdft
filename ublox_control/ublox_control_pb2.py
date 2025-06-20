@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\",\n\x05Point\x12\x10\n\x08latitude\x18\x01 \x01(\x05\x12\x11\n\tlongitude\x18\x02 \x01(\x05\"M\n\tRectangle\x12\x1f\n\x02lo\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x1f\n\x02hi\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\">\n\x07\x46\x65\x61ture\x12\x0c\n\x04name\x18\x01 \x01(\t\x12%\n\x08location\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\"C\n\tRouteNote\x12%\n\x08location\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x0f\n\x07message\x18\x02 \x01(\t\"b\n\x0cRouteSummary\x12\x13\n\x0bpoint_count\x18\x01 \x01(\x05\x12\x15\n\rfeature_count\x18\x02 \x01(\x05\x12\x10\n\x08\x64istance\x18\x03 \x01(\x05\x12\x14\n\x0c\x65lapsed_time\x18\x04 \x01(\x05\x32\x95\x02\n\nRouteGuide\x12:\n\nGetFeature\x12\x13.ubloxcontrol.Point\x1a\x15.ubloxcontrol.Feature\"\x00\x12\x42\n\x0cListFeatures\x12\x17.ubloxcontrol.Rectangle\x1a\x15.ubloxcontrol.Feature\"\x00\x30\x01\x12\x42\n\x0bRecordRoute\x12\x13.ubloxcontrol.Point\x1a\x1a.ubloxcontrol.RouteSummary\"\x00(\x01\x12\x43\n\tRouteChat\x12\x17.ubloxcontrol.RouteNote\x1a\x17.ubloxcontrol.RouteNote\"\x00(\x01\x30\x01\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\",\n\x05Point\x12\x10\n\x08latitude\x18\x01 \x01(\x05\x12\x11\n\tlongitude\x18\x02 \x01(\x05\"M\n\tRectangle\x12\x1f\n\x02lo\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x1f\n\x02hi\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\">\n\x07\x46\x65\x61ture\x12\x0c\n\x04name\x18\x01 \x01(\t\x12%\n\x08location\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\"C\n\tRouteNote\x12%\n\x08location\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x0f\n\x07message\x18\x02 \x01(\t\"b\n\x0cRouteSummary\x12\x13\n\x0bpoint_count\x18\x01 \x01(\x05\x12\x15\n\rfeature_count\x18\x02 \x01(\x05\x12\x10\n\x08\x64istance\x18\x03 \x01(\x05\x12\x14\n\x0c\x65lapsed_time\x18\x04 \x01(\x05\x32\x97\x02\n\x0cUbloxControl\x12:\n\nGetFeature\x12\x13.ubloxcontrol.Point\x1a\x15.ubloxcontrol.Feature\"\x00\x12\x42\n\x0cListFeatures\x12\x17.ubloxcontrol.Rectangle\x1a\x15.ubloxcontrol.Feature\"\x00\x30\x01\x12\x42\n\x0bRecordRoute\x12\x13.ubloxcontrol.Point\x1a\x1a.ubloxcontrol.RouteSummary\"\x00(\x01\x12\x43\n\tRouteChat\x12\x17.ubloxcontrol.RouteNote\x1a\x17.ubloxcontrol.RouteNote\"\x00(\x01\x30\x01\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,6 +42,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ROUTENOTE']._serialized_end=293
   _globals['_ROUTESUMMARY']._serialized_start=295
   _globals['_ROUTESUMMARY']._serialized_end=393
-  _globals['_ROUTEGUIDE']._serialized_start=396
-  _globals['_ROUTEGUIDE']._serialized_end=673
+  _globals['_UBLOXCONTROL']._serialized_start=396
+  _globals['_UBLOXCONTROL']._serialized_end=675
 # @@protoc_insertion_point(module_scope)

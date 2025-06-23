@@ -19,16 +19,42 @@ import logging
 import random
 
 from rich import print
+from rich.pretty import pprint
 
+## gRPC imports
 import grpc
+
+# gRPC reflection service (tells which services are available)
 from google.protobuf.descriptor_pool import DescriptorPool
 from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
     ProtoReflectionDescriptorDatabase,
 )
+# Standard datatypes
+from google.protobuf.struct_pb2 import Struct
+from google.protobuf.json_format import MessageToDict, ParseDict
 
+# Generated marshalling / demarshalling code
 import ublox_control_pb2
 import ublox_control_pb2_grpc
+
+## our code
 import ublox_control_resources
+
+
+# Configuration for metadata capture from the u-blox ZED-F9T timing chip
+# TODO: make this a separate config file and track with version control etc.
+f9t_config = {
+    "chip_name": "ZED-F9T",
+    "protocol": {
+        "ubx": {
+            "device": None,
+            "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
+            "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
+        }
+    },
+    "timeout (s)": 7,
+}
+
 
 
 def make_route_note(message, latitude, longitude):
@@ -100,6 +126,21 @@ def guide_record_route(stub):
     print("It took %s seconds " % route_summary.elapsed_time)
 
 
+
+def init_f9t(stub):
+    f9t_config_msg = ublox_control_pb2.F9tConfig(
+        config=ParseDict(f9t_config, Struct())
+    )
+    init_summary = stub.InitF9t(f9t_config_msg)
+    print(f'init_summary.status=', ublox_control_pb2.InitSummary.Status.Name(init_summary.status))
+    print(f'{init_summary.message=}')
+    print("init_summary.f9t_state=", end='')
+    pprint(MessageToDict(init_summary.f9t_state), expand_all=True)
+    for i, test_result in enumerate(init_summary.test_results):
+        print(f'TEST {i}:')
+        print("\t" + str(test_result).replace("\n", "\n\t"))
+
+
 def generate_messages():
     messages = [
         make_route_note("First message", 0, 0),
@@ -158,9 +199,11 @@ def run():
         guide_record_route(stub)
         print("-------------- RouteChat --------------")
         guide_route_chat(stub)
+        print("-------------- InitF9t --------------")
+        init_f9t(stub)
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    get_services()
-    # run()
+    # get_services()
+    run()

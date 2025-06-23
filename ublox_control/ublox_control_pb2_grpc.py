@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class UbloxControlStub(object):
-    """Interface exported by the server.
+    """Interface exported by the server connected to the ublox chip
     """
 
     def __init__(self, channel):
@@ -55,10 +55,15 @@ class UbloxControlStub(object):
                 request_serializer=ublox__control__pb2.RouteNote.SerializeToString,
                 response_deserializer=ublox__control__pb2.RouteNote.FromString,
                 _registered_method=True)
+        self.InitF9t = channel.unary_unary(
+                '/ubloxcontrol.UbloxControl/InitF9t',
+                request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
+                response_deserializer=ublox__control__pb2.InitSummary.FromString,
+                _registered_method=True)
 
 
 class UbloxControlServicer(object):
-    """Interface exported by the server.
+    """Interface exported by the server connected to the ublox chip
     """
 
     def GetFeature(self, request, context):
@@ -105,6 +110,13 @@ class UbloxControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def InitF9t(self, request, context):
+        """Configure ZED-F9T chip and verify all desired packets are being received.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_UbloxControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -128,6 +140,11 @@ def add_UbloxControlServicer_to_server(servicer, server):
                     request_deserializer=ublox__control__pb2.RouteNote.FromString,
                     response_serializer=ublox__control__pb2.RouteNote.SerializeToString,
             ),
+            'InitF9t': grpc.unary_unary_rpc_method_handler(
+                    servicer.InitF9t,
+                    request_deserializer=ublox__control__pb2.F9tConfig.FromString,
+                    response_serializer=ublox__control__pb2.InitSummary.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'ubloxcontrol.UbloxControl', rpc_method_handlers)
@@ -137,7 +154,7 @@ def add_UbloxControlServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class UbloxControl(object):
-    """Interface exported by the server.
+    """Interface exported by the server connected to the ublox chip
     """
 
     @staticmethod
@@ -238,6 +255,33 @@ class UbloxControl(object):
             '/ubloxcontrol.UbloxControl/RouteChat',
             ublox__control__pb2.RouteNote.SerializeToString,
             ublox__control__pb2.RouteNote.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def InitF9t(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ubloxcontrol.UbloxControl/InitF9t',
+            ublox__control__pb2.F9tConfig.SerializeToString,
+            ublox__control__pb2.InitSummary.FromString,
             options,
             channel_credentials,
             insecure,

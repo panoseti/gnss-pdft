@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+
+
 option java_multiple_files = true;
 option java_package = "io.gnss-pdft.ublox_control";
 option java_outer_classname = "UbloxControlProto";
@@ -7,7 +9,9 @@ option objc_class_prefix = "UBXCTL";
 
 package ubloxcontrol;
 
-// Interface exported by the server.
+import "google/protobuf/struct.proto"; // standard type for JSON data structures
+
+// Interface exported by the server connected to the ublox chip
 service UbloxControl {
   // A simple RPC.
   //
@@ -36,6 +40,9 @@ service UbloxControl {
   // Accepts a stream of RouteNotes sent while a route is being traversed,
   // while receiving other RouteNotes (e.g. from other users).
   rpc RouteChat(stream RouteNote) returns (stream RouteNote) {}
+
+  // Configure ZED-F9T chip and verify all desired packets are being received.
+  rpc InitF9t(F9tConfig) returns (InitSummary) {}
 }
 
 // Points are represented as latitude-longitude pairs in the E7 representation
@@ -94,4 +101,60 @@ message RouteSummary {
 
   // The duration of the traversal in seconds.
   int32 elapsed_time = 4;
+}
+
+// A F9tConfig is sent by the InitF9t RPC.
+//
+// It contains a JSON object specifying F9t configuration.
+message F9tConfig {
+  // JSON-formatted configuration for an F9T
+  google.protobuf.Struct config = 1;
+}
+
+
+message TestResult {
+  enum Result {
+    // default state
+    UNDEFINED = 0;
+    // the test passed
+    PASS = 1;
+    // the test failed
+    FAIL = 2;
+  }
+
+  // test name
+  string name = 1;
+
+  // test result
+  Result result = 2;
+
+  // error message
+  string message = 3;
+}
+
+// A InitSummary is returned by the InitF9t RPC.
+//
+// It returns information regarding the validity of the provided config file
+// and which validation checks passed.
+message InitSummary {
+  enum Status {
+    // default state
+    UNDEFINED = 0;
+    // the provided F9tConfig was invalid (see the message field for more)
+    INVALID_CONFIG = 1;
+    // the device was successfully configured and passed all validation checks
+    SUCCESS = 2;
+    // at least one verification test failed
+    FAILURE = 3;
+  }
+  Status status = 1;
+
+  // any message regarding the initialization operation
+  string message = 2;
+
+  // return the updated f9t state after initialization
+  google.protobuf.Struct f9t_state = 3;
+
+  // test results
+  repeated TestResult test_results = 4;
 }

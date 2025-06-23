@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
 """
-Data collection program for qerr capture.
+Command Line Interface for the Server-side RPC methods.
+These commands expect the following to function correctly:
+    1. A valid network connection to the Redis database on the headnode.
+    2. R/W user permissions to the Redis UBLOX hashset.
+    3. A valid ZED-F9T u-blox chip is available as a /dev/... file.
+    4. All required Python packages are installed.
 
 See https://github.com/semuconsulting/pyubx2 for documentation on UBX interface documentation.
 """
@@ -34,12 +39,12 @@ f9t_config = {
     "init_success": False,
 }
 
+"""Server utility functions"""
 
 def get_experiment_dir(start_timestamp, device):
     device_name = device.split('/')[-1]
     return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
 
-"""u-blox utility functions"""
 def get_f9t_unique_id(device):
     """
     Poll the unique ID of the f9t chip.
@@ -77,7 +82,7 @@ def get_f9t_unique_id(device):
             #         print("Received payload too short.")
             #     break
 
-def poll_config(device, cfg=f9t_config):
+def poll_f9t_config(device, cfg=f9t_config):
     """
     Poll the current configuration settings for each cfg_key specified in the cfg dict.
     On startup, should be 0 by default.
@@ -96,7 +101,7 @@ def poll_config(device, cfg=f9t_config):
             print('\t', parsed_data)
 
 
-def set_config(device, cfg=f9t_config):
+def set_f9t_config(device, cfg=f9t_config):
     """Tell chip to start sending metadata packets for each cfg_key"""
     layer = SET_LAYER_RAM
     transaction = TXN_NONE
@@ -116,13 +121,13 @@ def set_config(device, cfg=f9t_config):
             if parsed_data is not None:
                 print('\t', parsed_data)
 
-def check_dataflow(device, cfg=f9t_config):
+def check_f9t_dataflow(device, cfg=f9t_config):
     """
     Verify all packets specified in the 'packet_ids' fields of cfg are being received.
     NOTE: for now this is hardcoded for UBX packets.
     @return: True if all packets have been received, False otherwise.
     """
-    check_device(device)
+    check_device_exists(device)
 
     timeout = cfg['timeout (s)']
     ubx_cfg = cfg['protocol']['ubx']
@@ -150,7 +155,7 @@ def check_dataflow(device, cfg=f9t_config):
     raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
 
 """ Redis utility functions """
-def get_rkey(chip_name, chip_uid, prot_msg):
+def get_f9t_redis_key(chip_name, chip_uid, prot_msg):
     """
     Returns the hashset key for the given prot_msg and chip
     @param chip_uid: the unique chip ID returned by the `UBX-SEC-UNIQID` message. Must be a 10-digit hex integer.
@@ -169,7 +174,7 @@ def get_rkey(chip_name, chip_uid, prot_msg):
 
 """ Initialize u-blox device. """
 
-def check_device(device):
+def check_device_exists(device):
     if device is not None:
         if not os.path.exists(device):
             raise FileNotFoundError(f'Cannot access {device}')
@@ -179,11 +184,11 @@ def check_device(device):
 def init(args):
     """Configure device and verify all desired packets are being received."""
     device = args.device
-    check_device(device)
-    poll_config(device)
-    set_config(device)
-    poll_config(device)
-    verified = check_dataflow(device)     # Thows an Exception if not all packet types are being received.
+    check_device_exists(device)
+    poll_f9t_config(device)
+    set_f9t_config(device)
+    poll_f9t_config(device)
+    verified = check_f9t_dataflow(device)     # Thows an Exception if not all packet types are being received.
     if not verified:
         return False
     print(f"Device initialized. Ready to collect data!")
@@ -192,20 +197,20 @@ def init(args):
 
 """ Test redis connection """
 
-def test_redis(args):
+def test_redis_cli_connection(args):
     """
     Test Redis connection with specified connection parameters.
         1. Connect to Redis.
         2. Perform a series of pipelined write operations to a test hashset.
         3. Verify whether these writes were successful.
+    Returns True if all writes were successful (valid connection), False otherwise.
     """
     host = args.host
     port = args.port
-    interval_seconds = args.interval_seconds
-
+    socket_timeout = args.timeout
     # 1. Connect to Redis
     print(f"Connecting to {host}:{port}")
-    r = redis.Redis(host=host, port=port, db=0)
+    r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
     if not r.ping():
         raise FileNotFoundError(f'Cannot connect to {host}:{port}')
     # print(r)
@@ -218,31 +223,31 @@ def test_redis(args):
 
     failures = 0
     try:
-        while True:
-            time.sleep(interval_seconds)
-            timestamp = datetime.datetime.now().isoformat()
-            # Start a pipeline
-            pipe = r.pipeline()
+        # while True:
+        #     time.sleep(interval_seconds)
+        timestamp = datetime.datetime.now().isoformat()
+        # Create a redis pipeline to efficiently send key updates.
+        pipe = r.pipeline()
 
-            # Queue updates to a test hash: write current timestamp to 10 test keys
-            for i in range(20):
-                field = f't{i}'
-                value = datetime.datetime.now().isoformat()
-                pipe.hset('TEST', field, value)
+        # Queue updates to a test hash: write current timestamp to 10 test keys
+        for i in range(20):
+            field = f't{i}'
+            value = datetime.datetime.now().isoformat()
+            pipe.hset('TEST', field, value)
 
-            # Execute the pipeline and get results
-            results = pipe.execute(raise_on_error=False)
+        # Execute the pipeline and get results
+        results = pipe.execute(raise_on_error=False)
 
-            # Check if each operation succeeded
-            success = []
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    success.append('0')
-                    failures += 1
-                    print(f"Command {i} failed: {result=}")
-                else:
-                    success.append('1')
-            print(f'[{timestamp}]: success = [{" ".join(success)}]')
+        # Check if each operation succeeded
+        success = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                success.append('0')
+                failures += 1
+                print(f"Command {i} failed: {result=}")
+            else:
+                success.append('1')
+        print(f'[{timestamp}]: success = [{" ".join(success)}]')
 
     except KeyboardInterrupt:
         print(f'\nStopping test. {failures=}')
@@ -273,7 +278,7 @@ def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
         pipe = r.pipeline()
         for pkt_id in ubx_cfg['packet_ids']:
             prot_msg = f"UBX-{pkt_id}"  # # just ubx packets for now
-            rkey = get_rkey(chip_name, chip_uid, prot_msg)
+            rkey = get_f9t_redis_key(chip_name, chip_uid, prot_msg)
             for k, v in packet_cache[pkt_id].items():
                 pipe.hset(rkey, k, v)
             pipe.hset(rkey, 'Computer_UTC', curr_time)
@@ -303,7 +308,7 @@ def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
 
 def start_collect(args):
     device = args.device
-    valid_dataflow = check_dataflow(device)     # Will throw Exception if not all packet types are being received.
+    valid_dataflow = check_f9t_dataflow(device)     # Will throw Exception if not all packet types are being received.
     if not valid_dataflow:
         return False
     # Connect to Redis database
@@ -366,13 +371,18 @@ def cli_handler():
                                 nargs="?",
                                 type=int,
                                 default=6379)
-    parser_test_redis.add_argument("-n", "--interval_seconds",
-                                   # action="store_true",
-                                   help="number of seconds between test write operations. Default: 1 second",
+    parser_test_redis.add_argument('timeout',
+                                   help='cli connection timeout seconds. Default: 5',
+                                   nargs="?",
                                    type=int,
-                                   default=1
-                                   )
-    parser_test_redis.set_defaults(func=test_redis)
+                                   default=5)
+    # parser_test_redis.add_argument("-n", "--interval_seconds",
+    #                                # action="store_true",
+    #                                help="number of seconds between test write operations. Default: 1 second",
+    #                                type=int,
+    #                                default=1
+    #                                )
+    parser_test_redis.set_defaults(func=test_redis_cli_connection)
 
     # Dispatch command action
     args = parser.parse_args()

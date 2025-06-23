@@ -12,6 +12,7 @@ import ublox_control_pb2
 import ublox_control_pb2_grpc
 import ublox_control_resources
 
+"""route guide example utils"""
 
 def get_feature(feature_db, point):
     """Returns Feature at given location or None."""
@@ -44,6 +45,13 @@ def get_distance(start, end):
     # metres
     return R * c
 
+
+"""ublox control utils"""
+
+
+
+
+"""gRPC server wrapper for UbloxControl RPCss"""
 
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""

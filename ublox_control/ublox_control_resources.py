@@ -1,21 +1,70 @@
-# Copyright 2015 gRPC authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Common resources used in the gRPC route guide example."""
 
+
+"""
+
+Server-side code to handle GNSS control resources.
+Run on the computer
+
+"""
+import os
 import json
 
+# import pandas as pd
+
+import json
 import ublox_control_pb2
+# import seaborn as sns
+# import matplotlib.pyplot as plt
+
+ublox_control_config_file = 'ublox_control_config.json'
+
+def save_data(df, fpath):
+    with open(fpath, 'w') as f:
+        df.to_csv(f)
+
+def load_data(fpath):
+    with open(fpath, 'r') as f:
+        df = pd.read_csv(f, index_col=0)
+    return df
+
+def load_qerr_config():
+    if not os.path.exists(ublox_control_config_file):
+        raise FileNotFoundError(f"{ublox_control_config_file} does not exist."
+                                f"\nPlease re-run this script with the help flag -h to see the option to create it.")
+    with open(ublox_control_config_file) as f:
+        return json.load(f)
+
+def make_json_config():
+    config_template = {
+        'receiver': [
+            {
+                'name': '...',
+                'device_rpi': '/dev/...',
+                'device_wsl': '/dev/...',
+                'baudrate': 38400,
+                'comments': '...'
+            },
+            {
+                'name': '...',
+                'device_rpi': '/dev/...',
+                'device_wsl': '/dev/...',
+                'baudrate': 38400,
+                'comments': '...'
+            }
+        ]
+    }
+    if not os.path.exists(ublox_control_config_file):
+        with open(ublox_control_config_file, 'w') as f:
+            json.dump(config_template, f, indent=4)
+        print(f"created {ublox_control_config_file}")
+    else:
+        print(f"{ublox_control_config_file} already exists")
+
+
+
+"""Common resources used in the gRPC route guide example."""
+
+
 
 
 def read_route_guide_database():
@@ -37,7 +86,3 @@ def read_route_guide_database():
             )
             feature_list.append(feature)
     return feature_list
-
-
-
-

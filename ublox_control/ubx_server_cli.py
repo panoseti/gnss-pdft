@@ -197,34 +197,22 @@ def init(args):
 
 """ Test redis connection """
 
-def test_redis_cli_connection(args):
+def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
     """
     Test Redis connection with specified connection parameters.
         1. Connect to Redis.
         2. Perform a series of pipelined write operations to a test hashset.
         3. Verify whether these writes were successful.
-    Returns True if all writes were successful (valid connection), False otherwise.
+    Returns number of failed operations. (0 = test passed, 1+ = test failed.)
     """
-    host = args.host
-    port = args.port
-    socket_timeout = args.timeout
-    # 1. Connect to Redis
-    print(f"Connecting to {host}:{port}")
-    r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
-    if not r.ping():
-        raise FileNotFoundError(f'Cannot connect to {host}:{port}')
-    # print(r)
-
-    start_timestamp = datetime.datetime.now().isoformat()
-    print('Starting redis test:'
-          '\n\tUse CTRL+C to stop.'
-          '\n\tRun "HGETALL TEST" to view test keys on the Redis server'
-          '\n\tStart timestamp: {}\n'.format(start_timestamp))
-
     failures = 0
+
     try:
-        # while True:
-        #     time.sleep(interval_seconds)
+        print(f"Connecting to {host}:{port}")
+        r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
+        if not r.ping():
+            raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+
         timestamp = datetime.datetime.now().isoformat()
         # Create a redis pipeline to efficiently send key updates.
         pipe = r.pipeline()
@@ -249,9 +237,34 @@ def test_redis_cli_connection(args):
                 success.append('1')
         print(f'[{timestamp}]: success = [{" ".join(success)}]')
 
+    except Exception:
+        # Fail safely by reporting a failure in case of any exceptions
+        return 1
+    return failures
+
+
+def test_redis_cli_connection(args):
+    """
+    Server-side (on DAQ node) cli for RPC methods. Intended for testing.
+    Returns True iff all test cases passed.
+    """
+
+    host = args.host
+    port = args.port
+    socket_timeout = args.timeout
+
+    start_timestamp = datetime.datetime.now().isoformat()
+    print('Starting redis test:'
+          '\n\tUse CTRL+C to stop.'
+          '\n\tRun "HGETALL TEST" to view test keys on the Redis server'
+          '\n\tStart timestamp: {}\n'.format(start_timestamp))
+    failures = 1
+    try:
+        failures = test_redis_daq_to_headnode_connection(host, port, socket_timeout)
     except KeyboardInterrupt:
         print(f'\nStopping test. {failures=}')
-        pass
+        return False
+    return failures == 0
 
 
 """ Collect packets and forward to Redis. """

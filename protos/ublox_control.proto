@@ -112,8 +112,8 @@ message F9tConfig {
 }
 
 
-message TestResult {
-  enum Result {
+message TestCase {
+  enum TestResult {
     // default state
     UNDEFINED = 0;
     // the test passed
@@ -126,7 +126,7 @@ message TestResult {
   string name = 1;
 
   // test result
-  Result result = 2;
+  TestResult result = 2;
 
   // error message
   string message = 3;
@@ -137,7 +137,7 @@ message TestResult {
 // It returns information regarding the validity of the provided config file
 // and which validation checks passed.
 message InitSummary {
-  enum Status {
+  enum InitStatus {
     // default state
     UNDEFINED = 0;
     // the provided F9tConfig was invalid (see the message field for more)
@@ -147,7 +147,7 @@ message InitSummary {
     // at least one verification test failed
     FAILURE = 3;
   }
-  Status status = 1;
+  InitStatus init_status = 1;
 
   // any message regarding the initialization operation
   string message = 2;
@@ -156,5 +156,5 @@ message InitSummary {
   google.protobuf.Struct f9t_state = 3;
 
   // test results
-  repeated TestResult test_results = 4;
+  repeated TestCase test_results = 4;
 }

@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\x1a\x1cgoogle/protobuf/struct.proto\",\n\x05Point\x12\x10\n\x08latitude\x18\x01 \x01(\x05\x12\x11\n\tlongitude\x18\x02 \x01(\x05\"M\n\tRectangle\x12\x1f\n\x02lo\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x1f\n\x02hi\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\">\n\x07\x46\x65\x61ture\x12\x0c\n\x04name\x18\x01 \x01(\t\x12%\n\x08location\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\"C\n\tRouteNote\x12%\n\x08location\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x0f\n\x07message\x18\x02 \x01(\t\"b\n\x0cRouteSummary\x12\x13\n\x0bpoint_count\x18\x01 \x01(\x05\x12\x15\n\rfeature_count\x18\x02 \x01(\x05\x12\x10\n\x08\x64istance\x18\x03 \x01(\x05\x12\x14\n\x0c\x65lapsed_time\x18\x04 \x01(\x05\"4\n\tF9tConfig\x12\'\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x17.google.protobuf.Struct\"\x89\x01\n\nTestResult\x12\x0c\n\x04name\x18\x01 \x01(\t\x12/\n\x06result\x18\x02 \x01(\x0e\x32\x1f.ubloxcontrol.TestResult.Result\x12\x0f\n\x07message\x18\x03 \x01(\t\"+\n\x06Result\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04PASS\x10\x01\x12\x08\n\x04\x46\x41IL\x10\x02\"\xf3\x01\n\x0bInitSummary\x12\x30\n\x06status\x18\x01 \x01(\x0e\x32 .ubloxcontrol.InitSummary.Status\x12\x0f\n\x07message\x18\x02 \x01(\t\x12*\n\tf9t_state\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12.\n\x0ctest_results\x18\x04 \x03(\x0b\x32\x18.ubloxcontrol.TestResult\"E\n\x06Status\x12\r\n\tUNDEFINED\x10\x00\x12\x12\n\x0eINVALID_CONFIG\x10\x01\x12\x0b\n\x07SUCCESS\x10\x02\x12\x0b\n\x07\x46\x41ILURE\x10\x03\x32\xd8\x02\n\x0cUbloxControl\x12:\n\nGetFeature\x12\x13.ubloxcontrol.Point\x1a\x15.ubloxcontrol.Feature\"\x00\x12\x42\n\x0cListFeatures\x12\x17.ubloxcontrol.Rectangle\x1a\x15.ubloxcontrol.Feature\"\x00\x30\x01\x12\x42\n\x0bRecordRoute\x12\x13.ubloxcontrol.Point\x1a\x1a.ubloxcontrol.RouteSummary\"\x00(\x01\x12\x43\n\tRouteChat\x12\x17.ubloxcontrol.RouteNote\x1a\x17.ubloxcontrol.RouteNote\"\x00(\x01\x30\x01\x12?\n\x07InitF9t\x12\x17.ubloxcontrol.F9tConfig\x1a\x19.ubloxcontrol.InitSummary\"\x00\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\x1a\x1cgoogle/protobuf/struct.proto\",\n\x05Point\x12\x10\n\x08latitude\x18\x01 \x01(\x05\x12\x11\n\tlongitude\x18\x02 \x01(\x05\"M\n\tRectangle\x12\x1f\n\x02lo\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x1f\n\x02hi\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\">\n\x07\x46\x65\x61ture\x12\x0c\n\x04name\x18\x01 \x01(\t\x12%\n\x08location\x18\x02 \x01(\x0b\x32\x13.ubloxcontrol.Point\"C\n\tRouteNote\x12%\n\x08location\x18\x01 \x01(\x0b\x32\x13.ubloxcontrol.Point\x12\x0f\n\x07message\x18\x02 \x01(\t\"b\n\x0cRouteSummary\x12\x13\n\x0bpoint_count\x18\x01 \x01(\x05\x12\x15\n\rfeature_count\x18\x02 \x01(\x05\x12\x10\n\x08\x64istance\x18\x03 \x01(\x05\x12\x14\n\x0c\x65lapsed_time\x18\x04 \x01(\x05\"4\n\tF9tConfig\x12\'\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x17.google.protobuf.Struct\"\x8d\x01\n\x08TestCase\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x31\n\x06result\x18\x02 \x01(\x0e\x32!.ubloxcontrol.TestCase.TestResult\x12\x0f\n\x07message\x18\x03 \x01(\t\"/\n\nTestResult\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04PASS\x10\x01\x12\x08\n\x04\x46\x41IL\x10\x02\"\xfe\x01\n\x0bInitSummary\x12\x39\n\x0binit_status\x18\x01 \x01(\x0e\x32$.ubloxcontrol.InitSummary.InitStatus\x12\x0f\n\x07message\x18\x02 \x01(\t\x12*\n\tf9t_state\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12,\n\x0ctest_results\x18\x04 \x03(\x0b\x32\x16.ubloxcontrol.TestCase\"I\n\nInitStatus\x12\r\n\tUNDEFINED\x10\x00\x12\x12\n\x0eINVALID_CONFIG\x10\x01\x12\x0b\n\x07SUCCESS\x10\x02\x12\x0b\n\x07\x46\x41ILURE\x10\x03\x32\xd8\x02\n\x0cUbloxControl\x12:\n\nGetFeature\x12\x13.ubloxcontrol.Point\x1a\x15.ubloxcontrol.Feature\"\x00\x12\x42\n\x0cListFeatures\x12\x17.ubloxcontrol.Rectangle\x1a\x15.ubloxcontrol.Feature\"\x00\x30\x01\x12\x42\n\x0bRecordRoute\x12\x13.ubloxcontrol.Point\x1a\x1a.ubloxcontrol.RouteSummary\"\x00(\x01\x12\x43\n\tRouteChat\x12\x17.ubloxcontrol.RouteNote\x1a\x17.ubloxcontrol.RouteNote\"\x00(\x01\x30\x01\x12?\n\x07InitF9t\x12\x17.ubloxcontrol.F9tConfig\x1a\x19.ubloxcontrol.InitSummary\"\x00\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -45,14 +45,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ROUTESUMMARY']._serialized_end=423
   _globals['_F9TCONFIG']._serialized_start=425
   _globals['_F9TCONFIG']._serialized_end=477
-  _globals['_TESTRESULT']._serialized_start=480
-  _globals['_TESTRESULT']._serialized_end=617
-  _globals['_TESTRESULT_RESULT']._serialized_start=574
-  _globals['_TESTRESULT_RESULT']._serialized_end=617
-  _globals['_INITSUMMARY']._serialized_start=620
-  _globals['_INITSUMMARY']._serialized_end=863
-  _globals['_INITSUMMARY_STATUS']._serialized_start=794
-  _globals['_INITSUMMARY_STATUS']._serialized_end=863
-  _globals['_UBLOXCONTROL']._serialized_start=866
-  _globals['_UBLOXCONTROL']._serialized_end=1210
+  _globals['_TESTCASE']._serialized_start=480
+  _globals['_TESTCASE']._serialized_end=621
+  _globals['_TESTCASE_TESTRESULT']._serialized_start=574
+  _globals['_TESTCASE_TESTRESULT']._serialized_end=621
+  _globals['_INITSUMMARY']._serialized_start=624
+  _globals['_INITSUMMARY']._serialized_end=878
+  _globals['_INITSUMMARY_INITSTATUS']._serialized_start=805
+  _globals['_INITSUMMARY_INITSTATUS']._serialized_end=878
+  _globals['_UBLOXCONTROL']._serialized_start=881
+  _globals['_UBLOXCONTROL']._serialized_end=1225
 # @@protoc_insertion_point(module_scope)

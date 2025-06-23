@@ -85,21 +85,21 @@ def run_initialization_tests():
     for test in tests:
         result, message = test["test_fn"]()
         if result:
-            result = ublox_control_pb2.TestResult.Result.PASS
+            result = ublox_control_pb2.TestCase.TestResult.PASS
         else:
-            result = ublox_control_pb2.TestResult.Result.FAIL
+            result = ublox_control_pb2.TestCase.TestResult.FAIL
             all_pass = False
 
-        test_result = ublox_control_pb2.TestResult(
+        test_result = ublox_control_pb2.TestCase(
             name=test["name"],
             result=result,
             message=message
         )
         test_results.append(test_result)
     if all_pass:
-        init_status = ublox_control_pb2.InitSummary.Status.SUCCESS
+        init_status = ublox_control_pb2.InitSummary.InitStatus.SUCCESS
     else:
-        init_status = ublox_control_pb2.InitSummary.Status.FAILURE
+        init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
     return init_status, test_results
 
 
@@ -189,7 +189,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
         # TODO: change later
         init_summary = ublox_control_pb2.InitSummary(
-            status=init_status,
+            init_status=init_status,
             message=message,
             f9t_state=ParseDict(self.f9t_state, Struct()),
             test_results=test_results,

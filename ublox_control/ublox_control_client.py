@@ -18,7 +18,14 @@ from __future__ import print_function
 import logging
 import random
 
+from rich import print
+
 import grpc
+from google.protobuf.descriptor_pool import DescriptorPool
+from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
+    ProtoReflectionDescriptorDatabase,
+)
+
 import ublox_control_pb2
 import ublox_control_pb2_grpc
 import ublox_control_resources
@@ -114,13 +121,34 @@ def guide_route_chat(stub):
             % (response.message, format_point(response.location))
         )
 
+def get_services():
+    with grpc.insecure_channel("localhost:50051") as channel:
+        reflection_db = ProtoReflectionDescriptorDatabase(channel)
+        services = reflection_db.get_services()
+        print(f"found services: {services}")
+
+        desc_pool = DescriptorPool(reflection_db)
+        service_desc = desc_pool.FindServiceByName("ubloxcontrol.UbloxControl")
+        print(f"found UbloxControl service with name: {service_desc.full_name}")
+        for methods in service_desc.methods:
+            print(f"found method name: {methods.full_name}")
+            input_type = methods.input_type
+            output_type = methods.output_type
+            print(f"\tinput type for this method: {input_type.full_name}")
+            print(f"\toutput type for this method: {output_type.full_name}")
+
+        # request_desc = desc_pool.FindMessageTypeByName(
+        #     "helloworld.HelloRequest"
+        # )
+        # print(f"found request name: {request_desc.full_name}")
+
 
 def run():
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
     # used in circumstances in which the with statement does not fit the needs
     # of the code.
     with grpc.insecure_channel("localhost:50051") as channel:
-    #with grpc.insecure_channel("10.0.0.60:50051") as channel:
+    # with grpc.insecure_channel("10.0.0.60:50051") as channel:
         stub = ublox_control_pb2_grpc.UbloxControlStub(channel)
         print("-------------- GetFeature --------------")
         guide_get_feature(stub)
@@ -134,4 +162,5 @@ def run():
 
 if __name__ == "__main__":
     logging.basicConfig()
-    run()
+    get_services()
+    # run()

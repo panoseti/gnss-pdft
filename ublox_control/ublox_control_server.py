@@ -6,6 +6,8 @@ import math
 import time
 
 import grpc
+from grpc_reflection.v1alpha import reflection
+
 import ublox_control_pb2
 import ublox_control_pb2_grpc
 import ublox_control_resources
@@ -102,11 +104,22 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             prev_notes.append(new_note)
 
 
+
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     ublox_control_pb2_grpc.add_UbloxControlServicer_to_server(
         UbloxControlServicer(), server
     )
+
+    # Add RPC reflection to show available commands to users
+    SERVICE_NAMES = (
+        ublox_control_pb2.DESCRIPTOR.services_by_name["UbloxControl"].full_name,
+        reflection.SERVICE_NAME,
+    )
+    reflection.enable_server_reflection(SERVICE_NAMES, server)
+
+    # Start gRPC and configure to listen on port 50051
     server.add_insecure_port("[::]:50051")
     server.start()
     server.wait_for_termination()

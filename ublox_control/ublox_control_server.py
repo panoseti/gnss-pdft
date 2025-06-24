@@ -9,11 +9,16 @@ The server requires the following to correctly:
 
 from concurrent import futures
 import logging
+import time
+import re
 
 import grpc
 from grpc_reflection.v1alpha import reflection
+
+# standard gRPC protobuf types + utility functions
 from google.protobuf.struct_pb2 import Struct
 from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf import timestamp_pb2
 
 import ublox_control_pb2
 import ublox_control_pb2_grpc
@@ -42,15 +47,16 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def __init__(self):
         self.f9t_state = f9t_state.copy()
+        self.packet_ids = ['NAV-TIMEUTC', 'TIM-TP']
 
     def InitF9t(self, request, context):
+        """Configure a connected F9t chip"""
         f9t_config_dict = MessageToDict(request.config, preserving_proto_field_name=True)
         # TODO: add real validation checks here
         init_status, test_results = run_initialization_tests()
 
         message = ""
 
-        # TODO: change later
         init_summary = ublox_control_pb2.InitSummary(
             init_status=init_status,
             message=message,
@@ -59,6 +65,32 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         )
         return init_summary
 
+    def CapturePackets(self, request, context):
+        """Forward u-blox packets to the client"""
+        packet_id_pattern = request.packet_id_pattern
+        while context.is_active():
+            # Generate next response
+            time.sleep(0.5) # simulate waiting for next u-blox packet
+            # TODO: replace these hard-coded values with packets received from the connected u-blox chip
+            packet_id = "TEST"
+            parsed_data = {
+                'field1': 0,
+                'field2': 'hello',
+                'field3': 7.2,
+                'field4': None
+            }
+            timestamp = timestamp_pb2.Timestamp()
+            timestamp.GetCurrentTime()
+            # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
+            if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
+                packet_data = ublox_control_pb2.PacketData(
+                    packet_id=packet_id,
+                    parsed_data=ParseDict(parsed_data, Struct()),
+                    timestamp=timestamp
+                )
+                yield packet_data
+            else:
+                time.sleep(0.01)  # Avoid tight loops
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

@@ -14,9 +14,10 @@ import "google/protobuf/timestamp.proto"; // standard type for JSON data structu
 
 // Interface exported by the server connected to the ublox chip
 service UbloxControl {
-  // Configure ZED-F9T chip and verify all desired packets are being received.
+  // Configures a ZED-F9T chip and verifies all desired packets are being received.
   rpc InitF9t(F9tConfig) returns (InitSummary) {}
 
+  // Start a stream of GNSS metadata packets from the server to the headnode.
   rpc CapturePackets(CaptureCommand) returns (stream PacketData) {}
 }
 
@@ -26,21 +27,13 @@ service UbloxControl {
 // If packet_id_pattern is specified, only packets with packet_ids
 // matching packet_id_pattern will be streamed to the headnode.
 message CaptureCommand {
-//  enum Action {
-//    UNDEFINED = 0;
-//    START_STREAM = 1;
-//    START_FILTERED_STREAM = 2;
-//  }
-//  // Action to be performed by this command
-//  Action action = 1;
-
-  // optional regex pattern for filtering which packet types
+  // optional: regex pattern for filtering packet_ids streamed to the headnode
   string packet_id_pattern = 1;
 }
 
 message PacketData {
   // unique name for a ublox packet
-  string id = 1;
+  string packet_id = 1;
   // dictionary of parsed data in the specified packet
   google.protobuf.Struct parsed_data = 2;
   // UTC timestamp when this message was received by the DAQ node

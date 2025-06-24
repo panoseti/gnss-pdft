@@ -52,14 +52,15 @@ class UbloxControlServicer(object):
     """
 
     def InitF9t(self, request, context):
-        """Configure ZED-F9T chip and verify all desired packets are being received.
+        """Configures a ZED-F9T chip and verifies all desired packets are being received.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def CapturePackets(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Start a stream of GNSS metadata packets from the server to the headnode.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')

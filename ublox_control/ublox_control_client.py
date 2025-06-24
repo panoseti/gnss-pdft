@@ -7,7 +7,8 @@ import logging
 import queue
 from rich import print
 from rich.pretty import pprint
-import threading
+import re
+import datetime
 
 ## gRPC imports
 import grpc
@@ -20,10 +21,12 @@ from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
 # Standard gRPC protobuf types
 from google.protobuf.struct_pb2 import Struct
 from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf import timestamp_pb2
 
 # protoc-generated marshalling / demarshalling code
 import ublox_control_pb2
 import ublox_control_pb2_grpc
+
 # alias messages to improve readability
 from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig
 
@@ -34,7 +37,7 @@ from ublox_control_resources import *
 
 # Configuration for metadata capture from the u-blox ZED-F9T timing chip
 # TODO: make this a separate config file and track with version control etc.
-f9t_config = {
+default_f9t_config = {
     "chip_name": "ZED-F9T",
     "device": None, # /dev file connection
     "protocol": {
@@ -46,56 +49,8 @@ f9t_config = {
     "timeout (s)": 7,
 }
 
-
-def init_f9t(stub):
-    f9t_config_msg = F9tConfig(
-        config=ParseDict(f9t_config, Struct())
-    )
-    init_summary = stub.InitF9t(f9t_config_msg)
-    print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
-    print(f'{init_summary.message=}')
-    print("init_summary.f9t_state=", end='')
-    pprint(MessageToDict(init_summary.f9t_state), expand_all=True)
-    for i, test_result in enumerate(init_summary.test_results):
-        print(f'TEST {i}:')
-        print("\t" + str(test_result).replace("\n", "\n\t"))
-
-
-def capture_packets(stub):
-    valid_capture_command_aliases = ['start', 'stop']
-
-    def make_capture_command(action):
-        if action == 'start':
-            return CaptureCommand(CaptureCommand.START_STREAM)
-        elif action == 'stop':
-            return CaptureCommand(CaptureCommand.STOP_STREAM)
-        else:
-            raise ValueError(f'Unknown CaptureCommand action: "{action}"')
-
-    def capture_command_generator():
-        """Listens for user cli input to control gnss streaming behavior."""
-        try:
-            while True:
-                cmd_input = input(f"Enter a command {valid_capture_command_aliases} or press CTRL+C to stop: ")
-                if cmd_input in valid_capture_command_aliases:
-                    yield make_capture_command(cmd_input)
-                else:
-                    print(f'Unknown CaptureCommand: "{cmd_input}"')
-        except KeyboardInterrupt:
-            pass
-        finally:
-            # Gracefully stop streaming before exiting
-            yield make_capture_command('stop')
-
-    packet_data_stream = stub.CapturePackets(capture_command_generator())
-    for packet_data in packet_data_stream:
-        packet_id = packet_data.id
-        parsed_data = MessageToDict(packet_data.parsed_data)
-        packet_timestamp = packet_data.timestamp
-        print(f"Server response: {packet_data}")
-
-
 def get_services(channel):
+    """Prints all available RPCs for the UbloxControl service represented by [channel]."""
     def format_rpc_service(method):
         name = method.name
         input_type = method.input_type.name
@@ -114,6 +69,40 @@ def get_services(channel):
         print(f"\tfound: {format_rpc_service(method)}")
 
 
+def init_f9t(stub, f9t_config):
+    """Initializes an F9T device according to the specification in f9t_config."""
+    f9t_config_msg = F9tConfig(
+        config=ParseDict(f9t_config, Struct())
+    )
+    init_summary = stub.InitF9t(f9t_config_msg)
+    print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
+    print(f'{init_summary.message=}')
+    print("init_summary.f9t_state=", end='')
+    pprint(MessageToDict(init_summary.f9t_state), expand_all=True)
+    for i, test_result in enumerate(init_summary.test_results):
+        print(f'TEST {i}:')
+        print("\t" + str(test_result).replace("\n", "\n\t"))
+
+
+def capture_packets(stub, packet_id_pattern=""):
+    # valid_capture_command_aliases = ['start', 'stop']
+
+    def make_capture_command(pkt_id_pat):
+        re.compile(pkt_id_pat)  # verify the regex pattern compiles
+        return CaptureCommand(packet_id_pattern=pkt_id_pat)
+
+    packet_data_stream = stub.CapturePackets(
+        make_capture_command(packet_id_pattern)
+    )
+    for packet_data in packet_data_stream:
+        packet_id = packet_data.packet_id
+        parsed_data = MessageToDict(packet_data.parsed_data)
+        timestamp = packet_data.timestamp.ToDatetime()
+        print(f"[ {packet_id=} ] @ {timestamp=}: ", end="")
+        pprint(parsed_data, expand_all=False)
+
+
+
 def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
     # used in circumstances in which the with statement does not fit the needs
@@ -126,7 +115,10 @@ def run(host, port=50051):
         get_services(channel)
 
         print("-------------- InitF9t --------------")
-        init_f9t(stub)
+        init_f9t(stub, default_f9t_config)
+
+        print("-------------- CapturePackets --------------")
+        capture_packets(stub)
 
 
 if __name__ == "__main__":

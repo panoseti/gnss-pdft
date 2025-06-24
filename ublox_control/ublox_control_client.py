@@ -162,34 +162,28 @@ def guide_route_chat(stub):
             % (response.message, format_point(response.location))
         )
 
-def get_services():
-    with grpc.insecure_channel("localhost:50051") as channel:
-        reflection_db = ProtoReflectionDescriptorDatabase(channel)
-        services = reflection_db.get_services()
-        print(f"found services: {services}")
+def get_services(channel):
+    reflection_db = ProtoReflectionDescriptorDatabase(channel)
+    services = reflection_db.get_services()
+    print(f"found services: {services}")
 
-        desc_pool = DescriptorPool(reflection_db)
-        service_desc = desc_pool.FindServiceByName("ubloxcontrol.UbloxControl")
-        print(f"found UbloxControl service with name: {service_desc.full_name}")
-        for methods in service_desc.methods:
-            print(f"found method name: {methods.full_name}")
-            input_type = methods.input_type
-            output_type = methods.output_type
-            print(f"\tinput type for this method: {input_type.full_name}")
-            print(f"\toutput type for this method: {output_type.full_name}")
-
-        # request_desc = desc_pool.FindMessageTypeByName(
-        #     "helloworld.HelloRequest"
-        # )
-        # print(f"found request name: {request_desc.full_name}")
+    desc_pool = DescriptorPool(reflection_db)
+    service_desc = desc_pool.FindServiceByName("ubloxcontrol.UbloxControl")
+    print(f"found UbloxControl service with name: {service_desc.full_name}")
+    for methods in service_desc.methods:
+        print(f"found method name: {methods.full_name}")
+        input_type = methods.input_type
+        output_type = methods.output_type
+        print(f"\tinput type: {input_type.full_name}")
+        print(f"\toutput type: {output_type.full_name}")
 
 
-def run():
+def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
     # used in circumstances in which the with statement does not fit the needs
     # of the code.
-    with grpc.insecure_channel("localhost:50051") as channel:
-    # with grpc.insecure_channel("10.0.0.60:50051") as channel:
+    connection_target = f"{host}:{port}"
+    with grpc.insecure_channel(connection_target) as channel:
         stub = ublox_control_pb2_grpc.UbloxControlStub(channel)
         # print("-------------- GetFeature --------------")
         # guide_get_feature(stub)
@@ -201,7 +195,7 @@ def run():
         # guide_route_chat(stub)
 
         print("-------------- ServerReflection --------------")
-        get_services()
+        get_services(channel)
 
         print("-------------- InitF9t --------------")
         init_f9t(stub)
@@ -209,4 +203,7 @@ def run():
 
 if __name__ == "__main__":
     logging.basicConfig()
-    run()
+    # with grpc.insecure_channel("10.0.0.60:50051") as channel:
+    # run(host="10.0.0.60")
+    run(host="localhost")
+

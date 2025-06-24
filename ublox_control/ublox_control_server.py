@@ -49,7 +49,7 @@ default_f9t_state = {
 
 def run_initialization_tests(
         test_fn_list: List[Callable[..., Tuple[bool, str]]]
-) -> Tuple[InitSummary.InitStatus, TestCase.TestResult]:
+) -> Tuple[type(InitSummary.InitStatus), type(TestCase.TestResult)]:
     """
     Runs each test function in [test_functions].
     To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
@@ -113,7 +113,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         packet_id_pattern = request.packet_id_pattern
         while context.is_active():
             # Generate next response
-            time.sleep(0.5) # simulate waiting for next u-blox packet
+            time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
             # TODO: replace these hard-coded values with packets received from the connected u-blox chip
             packet_id = "TEST"
             parsed_data = {

@@ -224,6 +224,7 @@ def serve():
     # Start gRPC and configure to listen on port 50051
     server.add_insecure_port("[::]:50051")
     server.start()
+    print("gRPC server is running.\nPress CTRL+C to stop.")
     server.wait_for_termination()
 
 

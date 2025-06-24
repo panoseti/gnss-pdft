@@ -199,11 +199,14 @@ def run():
         # guide_record_route(stub)
         # print("-------------- RouteChat --------------")
         # guide_route_chat(stub)
+
+        print("-------------- ServerReflection --------------")
+        get_services()
+
         print("-------------- InitF9t --------------")
         init_f9t(stub)
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    # get_services()
     run()

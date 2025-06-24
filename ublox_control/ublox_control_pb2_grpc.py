@@ -40,6 +40,11 @@ class UbloxControlStub(object):
                 request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
                 response_deserializer=ublox__control__pb2.InitSummary.FromString,
                 _registered_method=True)
+        self.CapturePackets = channel.unary_stream(
+                '/ubloxcontrol.UbloxControl/CapturePackets',
+                request_serializer=ublox__control__pb2.CaptureCommand.SerializeToString,
+                response_deserializer=ublox__control__pb2.PacketData.FromString,
+                _registered_method=True)
 
 
 class UbloxControlServicer(object):
@@ -53,6 +58,12 @@ class UbloxControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CapturePackets(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_UbloxControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -60,6 +71,11 @@ def add_UbloxControlServicer_to_server(servicer, server):
                     servicer.InitF9t,
                     request_deserializer=ublox__control__pb2.F9tConfig.FromString,
                     response_serializer=ublox__control__pb2.InitSummary.SerializeToString,
+            ),
+            'CapturePackets': grpc.unary_stream_rpc_method_handler(
+                    servicer.CapturePackets,
+                    request_deserializer=ublox__control__pb2.CaptureCommand.FromString,
+                    response_serializer=ublox__control__pb2.PacketData.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -90,6 +106,33 @@ class UbloxControl(object):
             '/ubloxcontrol.UbloxControl/InitF9t',
             ublox__control__pb2.F9tConfig.SerializeToString,
             ublox__control__pb2.InitSummary.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CapturePackets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/ubloxcontrol.UbloxControl/CapturePackets',
+            ublox__control__pb2.CaptureCommand.SerializeToString,
+            ublox__control__pb2.PacketData.FromString,
             options,
             channel_credentials,
             insecure,

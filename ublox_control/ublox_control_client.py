@@ -4,8 +4,10 @@ The Python implementation of a gRPC UbloxControl client.
 Run this on the headnode to configure the u-blox GNSS receivers in remote domes.
 """
 import logging
+import queue
 from rich import print
 from rich.pretty import pprint
+import threading
 
 ## gRPC imports
 import grpc
@@ -22,18 +24,21 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 # protoc-generated marshalling / demarshalling code
 import ublox_control_pb2
 import ublox_control_pb2_grpc
+# alias messages to improve readability
+from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig
+
 
 ## our code
-import ublox_control_resources
+from ublox_control_resources import *
 
 
 # Configuration for metadata capture from the u-blox ZED-F9T timing chip
 # TODO: make this a separate config file and track with version control etc.
 f9t_config = {
     "chip_name": "ZED-F9T",
+    "device": None, # /dev file connection
     "protocol": {
         "ubx": {
-            "device": None,
             "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
             "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
         }
@@ -43,11 +48,11 @@ f9t_config = {
 
 
 def init_f9t(stub):
-    f9t_config_msg = ublox_control_pb2.F9tConfig(
+    f9t_config_msg = F9tConfig(
         config=ParseDict(f9t_config, Struct())
     )
     init_summary = stub.InitF9t(f9t_config_msg)
-    print(f'init_summary.status=', ublox_control_pb2.InitSummary.InitStatus.Name(init_summary.init_status))
+    print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
     print(f'{init_summary.message=}')
     print("init_summary.f9t_state=", end='')
     pprint(MessageToDict(init_summary.f9t_state), expand_all=True)
@@ -56,8 +61,48 @@ def init_f9t(stub):
         print("\t" + str(test_result).replace("\n", "\n\t"))
 
 
+def capture_packets(stub):
+    valid_capture_command_aliases = ['start', 'stop']
+
+    def make_capture_command(action):
+        if action == 'start':
+            return CaptureCommand(CaptureCommand.START_STREAM)
+        elif action == 'stop':
+            return CaptureCommand(CaptureCommand.STOP_STREAM)
+        else:
+            raise ValueError(f'Unknown CaptureCommand action: "{action}"')
+
+    def capture_command_generator():
+        """Listens for user cli input to control gnss streaming behavior."""
+        try:
+            while True:
+                cmd_input = input(f"Enter a command {valid_capture_command_aliases} or press CTRL+C to stop: ")
+                if cmd_input in valid_capture_command_aliases:
+                    yield make_capture_command(cmd_input)
+                else:
+                    print(f'Unknown CaptureCommand: "{cmd_input}"')
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Gracefully stop streaming before exiting
+            yield make_capture_command('stop')
+
+    packet_data_stream = stub.CapturePackets(capture_command_generator())
+    for packet_data in packet_data_stream:
+        packet_id = packet_data.id
+        parsed_data = MessageToDict(packet_data.parsed_data)
+        packet_timestamp = packet_data.timestamp
+        print(f"Server response: {packet_data}")
+
 
 def get_services(channel):
+    def format_rpc_service(method):
+        name = method.name
+        input_type = method.input_type.name
+        output_type = method.output_type.name
+        client_stream = "stream " if method.client_streaming else ""
+        server_stream = "stream " if method.server_streaming else ""
+        return f"rpc {name}({client_stream}{input_type}) returns ({server_stream}{output_type})"
     reflection_db = ProtoReflectionDescriptorDatabase(channel)
     services = reflection_db.get_services()
     print(f"found services: {services}")
@@ -65,12 +110,8 @@ def get_services(channel):
     desc_pool = DescriptorPool(reflection_db)
     service_desc = desc_pool.FindServiceByName("ubloxcontrol.UbloxControl")
     print(f"found UbloxControl service with name: {service_desc.full_name}")
-    for methods in service_desc.methods:
-        print(f"found method name: {methods.full_name}")
-        input_type = methods.input_type
-        output_type = methods.output_type
-        print(f"\tinput type: {input_type.full_name}")
-        print(f"\toutput type: {output_type.full_name}")
+    for method in service_desc.methods:
+        print(f"\tfound: {format_rpc_service(method)}")
 
 
 def run(host, port=50051):

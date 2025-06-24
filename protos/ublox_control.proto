@@ -10,15 +10,59 @@ option objc_class_prefix = "UBXCTL";
 package ubloxcontrol;
 
 import "google/protobuf/struct.proto"; // standard type for JSON data structures
+import "google/protobuf/timestamp.proto"; // standard type for JSON data structures
 
 // Interface exported by the server connected to the ublox chip
 service UbloxControl {
   // Configure ZED-F9T chip and verify all desired packets are being received.
   rpc InitF9t(F9tConfig) returns (InitSummary) {}
+
+  rpc CapturePackets(CaptureCommand) returns (stream PacketData) {}
 }
 
-/* InitF9T */
-//message
+// A CaptureCommand consumed by the CapturePackets RPC.
+// By default all gnss packets received from the u-blox chip
+// are forwarded to the headnode.
+// If packet_id_pattern is specified, only packets with packet_ids
+// matching packet_id_pattern will be streamed to the headnode.
+message CaptureCommand {
+//  enum Action {
+//    UNDEFINED = 0;
+//    START_STREAM = 1;
+//    START_FILTERED_STREAM = 2;
+//  }
+//  // Action to be performed by this command
+//  Action action = 1;
+
+  // optional regex pattern for filtering which packet types
+  string packet_id_pattern = 1;
+}
+
+message PacketData {
+  // unique name for a ublox packet
+  string id = 1;
+  // dictionary of parsed data in the specified packet
+  google.protobuf.Struct parsed_data = 2;
+  // UTC timestamp when this message was received by the DAQ node
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+//message UbloxPacketConfig {
+//  enum Protocol {
+//    UNDEFINED = 0;
+//    UBX = 1;
+//    NMEA = 2;
+//    RTCM3 = 3;
+//  }
+//
+//  Protocol protocol = 1;
+//
+//  // pyubx2 cfg key
+//  string cfg_key = 2;
+//
+//  // pyubx2 packet id
+//  string packet_id = 3;
+//}
 
 // A F9tConfig is sent by the InitF9t RPC.
 //

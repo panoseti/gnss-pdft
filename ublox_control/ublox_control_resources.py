@@ -1,19 +1,11 @@
-
-
 """
-
-Server-side code to handle GNSS control resources.
-Run on the computer
-
+Common functions for the server-side cli and gRPC UbloxControl server.
 """
 import os
 import json
 
-
-# import pandas as pd
 import datetime
-# import seaborn as sns
-# import matplotlib.pyplot as plt
+from unittest import TestResult
 
 # import redis
 from serial import Serial
@@ -21,55 +13,10 @@ from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYE
 
 import ublox_control_pb2
 
+# message enums
+from ublox_control_pb2 import TestCase, InitSummary
+
 ublox_control_config_file = 'ublox_control_config.json'
-
-def save_data(df, fpath):
-    with open(fpath, 'w') as f:
-        df.to_csv(f)
-
-def load_data(fpath):
-    with open(fpath, 'r') as f:
-        df = pd.read_csv(f, index_col=0)
-    return df
-
-def load_qerr_config():
-    if not os.path.exists(ublox_control_config_file):
-        raise FileNotFoundError(f"{ublox_control_config_file} does not exist."
-                                f"\nPlease re-run this script with the help flag -h to see the option to create it.")
-    with open(ublox_control_config_file) as f:
-        return json.load(f)
-
-def make_json_config():
-    config_template = {
-        'receiver': [
-            {
-                'name': '...',
-                'device_rpi': '/dev/...',
-                'device_wsl': '/dev/...',
-                'baudrate': 38400,
-                'comments': '...'
-            },
-            {
-                'name': '...',
-                'device_rpi': '/dev/...',
-                'device_wsl': '/dev/...',
-                'baudrate': 38400,
-                'comments': '...'
-            }
-        ]
-    }
-    if not os.path.exists(ublox_control_config_file):
-        with open(ublox_control_config_file, 'w') as f:
-            json.dump(config_template, f, indent=4)
-        print(f"created {ublox_control_config_file}")
-    else:
-        print(f"{ublox_control_config_file} already exists")
-
-
-
-"""Common resources used in the gRPC route guide example."""
-
-
 
 
 def read_route_guide_database():
@@ -94,6 +41,57 @@ def read_route_guide_database():
 
 
 """ Testing utils """
+
+def test_0():
+    msg = "todo: replace with real test 0"
+    return True, msg
+
+def test_1():
+    msg = "todo: replace with real test 1"
+    return False, msg
+
+tests = [
+    {
+        "name": "example_0",
+        "test_fn": test_0,
+    },
+    {
+        "name": "example_1",
+        "test_fn": test_1,
+    }
+]
+
+def run_initialization_tests():
+    """Run each test case in tests.
+    Each test returns a tuple of (result: bool, message: str)
+        - result: whether the test passed
+        - message: information about any failure cases or warnings.
+    Returns enum init_status and a list of test_results.
+    """
+    # TODO: add real validation checks here
+    all_pass = True
+    test_results = []
+    for test in tests:
+        result, message = test["test_fn"]()
+        if result:
+            result = TestCase.TestResult.PASS
+        else:
+            result = TestCase.TestResult.FAIL
+            all_pass = False
+
+        test_result = ublox_control_pb2.TestCase(
+            name=test["name"],
+            result=result,
+            message=message
+        )
+        test_results.append(test_result)
+    if all_pass:
+        init_status = InitSummary.InitStatus.SUCCESS
+    else:
+        init_status = InitSummary.InitStatus.FAILURE
+    return init_status, test_results
+
+
 def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
     """
     Test Redis connection with specified connection parameters.
@@ -139,3 +137,47 @@ def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
         return 1
     return failures
 
+
+
+# def save_data(df, fpath):
+#     with open(fpath, 'w') as f:
+#         df.to_csv(f)
+#
+# def load_data(fpath):
+#     with open(fpath, 'r') as f:
+#         df = pd.read_csv(f, index_col=0)
+#     return df
+#
+# def load_qerr_config():
+#     if not os.path.exists(ublox_control_config_file):
+#         raise FileNotFoundError(f"{ublox_control_config_file} does not exist."
+#                                 f"\nPlease re-run this script with the help flag -h to see the option to create it.")
+#     with open(ublox_control_config_file) as f:
+#         return json.load(f)
+#
+# def make_json_config():
+#     config_template = {
+#         'receiver': [
+#             {
+#                 'name': '...',
+#                 'device_rpi': '/dev/...',
+#                 'device_wsl': '/dev/...',
+#                 'baudrate': 38400,
+#                 'comments': '...'
+#             },
+#             {
+#                 'name': '...',
+#                 'device_rpi': '/dev/...',
+#                 'device_wsl': '/dev/...',
+#                 'baudrate': 38400,
+#                 'comments': '...'
+#             }
+#         ]
+#     }
+#     if not os.path.exists(ublox_control_config_file):
+#         with open(ublox_control_config_file, 'w') as f:
+#             json.dump(config_template, f, indent=4)
+#         print(f"created {ublox_control_config_file}")
+#     else:
+#         print(f"{ublox_control_config_file} already exists")
+#

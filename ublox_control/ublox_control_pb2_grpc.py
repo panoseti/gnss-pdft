@@ -35,26 +35,6 @@ class UbloxControlStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.GetFeature = channel.unary_unary(
-                '/ubloxcontrol.UbloxControl/GetFeature',
-                request_serializer=ublox__control__pb2.Point.SerializeToString,
-                response_deserializer=ublox__control__pb2.Feature.FromString,
-                _registered_method=True)
-        self.ListFeatures = channel.unary_stream(
-                '/ubloxcontrol.UbloxControl/ListFeatures',
-                request_serializer=ublox__control__pb2.Rectangle.SerializeToString,
-                response_deserializer=ublox__control__pb2.Feature.FromString,
-                _registered_method=True)
-        self.RecordRoute = channel.stream_unary(
-                '/ubloxcontrol.UbloxControl/RecordRoute',
-                request_serializer=ublox__control__pb2.Point.SerializeToString,
-                response_deserializer=ublox__control__pb2.RouteSummary.FromString,
-                _registered_method=True)
-        self.RouteChat = channel.stream_stream(
-                '/ubloxcontrol.UbloxControl/RouteChat',
-                request_serializer=ublox__control__pb2.RouteNote.SerializeToString,
-                response_deserializer=ublox__control__pb2.RouteNote.FromString,
-                _registered_method=True)
         self.InitF9t = channel.unary_unary(
                 '/ubloxcontrol.UbloxControl/InitF9t',
                 request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
@@ -66,50 +46,6 @@ class UbloxControlServicer(object):
     """Interface exported by the server connected to the ublox chip
     """
 
-    def GetFeature(self, request, context):
-        """A simple RPC.
-
-        Obtains the feature at a given position.
-
-        A feature with an empty name is returned if there's no feature at the given
-        position.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def ListFeatures(self, request, context):
-        """A server-to-client streaming RPC.
-
-        Obtains the Features available within the given Rectangle.  Results are
-        streamed rather than returned at once (e.g. in a response message with a
-        repeated field), as the rectangle may cover a large area and contain a
-        huge number of features.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def RecordRoute(self, request_iterator, context):
-        """A client-to-server streaming RPC.
-
-        Accepts a stream of Points on a route being traversed, returning a
-        RouteSummary when traversal is completed.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def RouteChat(self, request_iterator, context):
-        """A Bidirectional streaming RPC.
-
-        Accepts a stream of RouteNotes sent while a route is being traversed,
-        while receiving other RouteNotes (e.g. from other users).
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def InitF9t(self, request, context):
         """Configure ZED-F9T chip and verify all desired packets are being received.
         """
@@ -120,26 +56,6 @@ class UbloxControlServicer(object):
 
 def add_UbloxControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'GetFeature': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetFeature,
-                    request_deserializer=ublox__control__pb2.Point.FromString,
-                    response_serializer=ublox__control__pb2.Feature.SerializeToString,
-            ),
-            'ListFeatures': grpc.unary_stream_rpc_method_handler(
-                    servicer.ListFeatures,
-                    request_deserializer=ublox__control__pb2.Rectangle.FromString,
-                    response_serializer=ublox__control__pb2.Feature.SerializeToString,
-            ),
-            'RecordRoute': grpc.stream_unary_rpc_method_handler(
-                    servicer.RecordRoute,
-                    request_deserializer=ublox__control__pb2.Point.FromString,
-                    response_serializer=ublox__control__pb2.RouteSummary.SerializeToString,
-            ),
-            'RouteChat': grpc.stream_stream_rpc_method_handler(
-                    servicer.RouteChat,
-                    request_deserializer=ublox__control__pb2.RouteNote.FromString,
-                    response_serializer=ublox__control__pb2.RouteNote.SerializeToString,
-            ),
             'InitF9t': grpc.unary_unary_rpc_method_handler(
                     servicer.InitF9t,
                     request_deserializer=ublox__control__pb2.F9tConfig.FromString,
@@ -156,114 +72,6 @@ def add_UbloxControlServicer_to_server(servicer, server):
 class UbloxControl(object):
     """Interface exported by the server connected to the ublox chip
     """
-
-    @staticmethod
-    def GetFeature(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/ubloxcontrol.UbloxControl/GetFeature',
-            ublox__control__pb2.Point.SerializeToString,
-            ublox__control__pb2.Feature.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def ListFeatures(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/ubloxcontrol.UbloxControl/ListFeatures',
-            ublox__control__pb2.Rectangle.SerializeToString,
-            ublox__control__pb2.Feature.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RecordRoute(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.stream_unary(
-            request_iterator,
-            target,
-            '/ubloxcontrol.UbloxControl/RecordRoute',
-            ublox__control__pb2.Point.SerializeToString,
-            ublox__control__pb2.RouteSummary.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RouteChat(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.stream_stream(
-            request_iterator,
-            target,
-            '/ubloxcontrol.UbloxControl/RouteChat',
-            ublox__control__pb2.RouteNote.SerializeToString,
-            ublox__control__pb2.RouteNote.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
 
     @staticmethod
     def InitF9t(request,

@@ -3,6 +3,7 @@ Common functions for gRPC UbloxControl service.
 """
 import os
 import json
+from typing import List, Callable, Tuple
 
 import datetime
 from unittest import TestResult
@@ -39,8 +40,69 @@ def read_route_guide_database():
             feature_list.append(feature)
     return feature_list
 
+""" Redis utility functions """
+def get_f9t_redis_key(chip_name, chip_uid, prot_msg):
+    """
+    Returns the hashset key for the given prot_msg and chip
+    @param chip_uid: the unique chip ID returned by the `UBX-SEC-UNIQID` message. Must be a 10-digit hex integer.
+    @param prot_msg: u-blox protocol message name (e.g. `UBX-TIM-TP`) as specified in the ZED-F9T data sheet.
+    @param chip_name: chip name. For now, this will always be `ZED-F9T`, but in the future we may want to record data for other u-blox chip types.
+    @return: Redis hash set key in the following format "UBLOX_{chip_name}_{chip_uid}_{data_type}", where each field is uppercase.
+    """
+    # Verify the chip_uid is a 10-digit hex number
+    chip_uid_emsg = f"chip_uid must be a 10-digit hex integer. Got {chip_uid=}"
+    try:
+        assert len(chip_uid) == 10, chip_uid_emsg
+        int(chip_uid, 16)   # verifies chip_uid is a valid hex integer
+    except ValueError or AssertionError:
+        raise ValueError(chip_uid_emsg)
+    return f"UBLOX_{chip_name.upper()}_{chip_uid.upper()}_{prot_msg.upper()}"
+
 
 """ Testing utils """
+
+def check_device_exists(device):
+    msg = ""
+    if device is not None:
+        if not os.path.exists(device):
+            raise FileNotFoundError(f'Cannot access {device}')
+            msg = f'Cannot access {device}'
+        return True, msg
+    return False, msg
+
+
+def check_f9t_dataflow(device, cfg):
+    """
+    Verify all packets specified in the 'packet_ids' fields of cfg are being received.
+    NOTE: for now this is hardcoded for UBX packets.
+    @return: True if all packets have been received, False otherwise.
+    """
+    timeout = cfg['timeout (s)']
+    ubx_cfg = cfg['protocol']['ubx']
+    baudrate = cfg['baudrate']
+
+    # Initialize dict for recording whether we're receiving packets of each type.
+    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
+
+    msg = ""
+    try:
+        with Serial(device, baudrate, timeout=timeout) as stream:
+            ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
+            print('Verifying packets are being received... (If stuck at this step, re-run with the "init" option.)')
+
+            for i in range(timeout):  # assumes config packets are send every second -> waits for timeout seconds.
+                raw_data, parsed_data = ubr.read() # blocking read operation -> waits for next UBX_PROTOCOL packet.
+                if parsed_data:
+                    for pkt_id in pkt_id_flags.keys():
+                        if parsed_data.identity == pkt_id:
+                            pkt_id_flags[pkt_id] = True
+                if all(pkt_id_flags.values()):
+                    print('All packets are being received.')
+                    return True, msg
+    except KeyboardInterrupt:
+        print('Interrupted by KeyboardInterrupt.')
+        return False, msg
+    raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
 
 def test_0():
     msg = "todo: replace with real test 0"
@@ -50,46 +112,6 @@ def test_1():
     msg = "todo: replace with real test 1"
     return False, msg
 
-tests = [
-    {
-        "name": "example_0",
-        "test_fn": test_0,
-    },
-    {
-        "name": "example_1",
-        "test_fn": test_1,
-    }
-]
-
-def run_initialization_tests():
-    """Run each test case in tests.
-    Each test returns a tuple of (result: bool, message: str)
-        - result: whether the test passed
-        - message: information about any failure cases or warnings.
-    Returns enum init_status and a list of test_results.
-    """
-    # TODO: add real validation checks here
-    all_pass = True
-    test_results = []
-    for test in tests:
-        result, message = test["test_fn"]()
-        if result:
-            result = TestCase.TestResult.PASS
-        else:
-            result = TestCase.TestResult.FAIL
-            all_pass = False
-
-        test_result = ublox_control_pb2.TestCase(
-            name=test["name"],
-            result=result,
-            message=message
-        )
-        test_results.append(test_result)
-    if all_pass:
-        init_status = InitSummary.InitStatus.SUCCESS
-    else:
-        init_status = InitSummary.InitStatus.FAILURE
-    return init_status, test_results
 
 
 def test_redis_daq_to_headnode_connection(host, port, socket_timeout):

@@ -6,13 +6,15 @@ The server requires the following to correctly:
     2. A valid /dev file for a connected ZED-F9T u-blox chip.
     3. The installation of all Python packages specified in requirements.txt.
 """
-
+import random
 from concurrent import futures
 import logging
 import time
 import re
 
 import grpc
+
+# gRPC reflection service: allows clients to discover available RPCs
 from grpc_reflection.v1alpha import reflection
 
 # standard gRPC protobuf types + utility functions
@@ -20,12 +22,16 @@ from google.protobuf.struct_pb2 import Struct
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf import timestamp_pb2
 
+# protoc-generated marshalling / demarshalling code
 import ublox_control_pb2
 import ublox_control_pb2_grpc
+
+# alias messages to improve readability
+from ublox_control_pb2 import TestCase, InitSummary
 from ublox_control_resources import *
 
 # Default chip state upon server startup.
-f9t_state = {
+default_f9t_state = {
     "chip_name": "ZED-F9T",
     "chip_uid": None,
     "protocol": {
@@ -40,20 +46,57 @@ f9t_state = {
 }
 
 
-"""gRPC server wrapper for UbloxControl RPCss"""
+
+def run_initialization_tests(
+        test_fn_list: List[Callable[..., Tuple[bool, str]]]
+) -> Tuple[InitSummary.InitStatus, TestCase.TestResult]:
+    """
+    Runs each test function in [test_functions].
+    To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
+    Returns enum init_status and a list of test_results.
+    """
+
+    def get_test_name(test_fn):
+        return f"%s.%s" % (test_fn.__module__, test_fn.__name__)
+
+    all_pass = True
+    test_results = []
+    for test_fn in test_fn_list:
+        result, message = test_fn()
+        if result:
+            result = TestCase.TestResult.PASS
+        else:
+            result = TestCase.TestResult.FAIL
+            all_pass = False
+
+        test_result = ublox_control_pb2.TestCase(
+            name=get_test_name(test_fn),
+            result=result,
+            message=message
+        )
+        test_results.append(test_result)
+    if all_pass:
+        init_status = InitSummary.InitStatus.SUCCESS
+    else:
+        init_status = InitSummary.InitStatus.FAILURE
+    return init_status, test_results
+
+
+"""gRPC server wrapper for UbloxControl RPCs"""
 
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
     def __init__(self):
-        self.f9t_state = f9t_state.copy()
+        self.f9t_state = default_f9t_state.copy()
         self.packet_ids = ['NAV-TIMEUTC', 'TIM-TP']
+        self.init_tests = [test_0, test_1]
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip"""
         f9t_config_dict = MessageToDict(request.config, preserving_proto_field_name=True)
         # TODO: add real validation checks here
-        init_status, test_results = run_initialization_tests()
+        init_status, test_results = run_initialization_tests(self.init_tests)
 
         message = ""
 
@@ -74,9 +117,9 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             # TODO: replace these hard-coded values with packets received from the connected u-blox chip
             packet_id = "TEST"
             parsed_data = {
-                'field1': 0,
+                'qErr': random.randint(-4, 4),
                 'field2': 'hello',
-                'field3': 7.2,
+                'field3': random.random(),
                 'field4': None
             }
             timestamp = timestamp_pb2.Timestamp()
@@ -93,6 +136,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 time.sleep(0.01)  # Avoid tight loops
 
 def serve():
+    """Create the gRPC server threadpool and start providing the UbloxControl service."""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     ublox_control_pb2_grpc.add_UbloxControlServicer_to_server(
         UbloxControlServicer(), server
@@ -108,8 +152,12 @@ def serve():
     # Start gRPC and configure to listen on port 50051
     server.add_insecure_port("[::]:50051")
     server.start()
-    print("gRPC server is running.\nPress CTRL+C to stop.")
-    server.wait_for_termination()
+    print("[gRPC server is running]\n[Enter CTRL+C to stop]")
+    try:
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        print("[^C received, shutting down the server]")
+
 
 
 if __name__ == "__main__":

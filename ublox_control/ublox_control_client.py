@@ -13,7 +13,7 @@ import datetime
 ## gRPC imports
 import grpc
 
-# gRPC reflection service (tells which services are available)
+# gRPC reflection service: allows clients to discover available RPCs
 from google.protobuf.descriptor_pool import DescriptorPool
 from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
     ProtoReflectionDescriptorDatabase,
@@ -98,7 +98,7 @@ def capture_packets(stub, packet_id_pattern=""):
         packet_id = packet_data.packet_id
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime()
-        print(f"[ {packet_id=} ] @ {timestamp=}: ", end="")
+        print(f"[ {packet_id=} ] @ {timestamp=} : ", end="")
         pprint(parsed_data, expand_all=False)
 
 

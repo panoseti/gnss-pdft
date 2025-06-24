@@ -105,66 +105,9 @@ def set_f9t_config(device, cfg=f9t_config):
             if parsed_data is not None:
                 print('\t', parsed_data)
 
-def check_f9t_dataflow(device, cfg=f9t_config):
-    """
-    Verify all packets specified in the 'packet_ids' fields of cfg are being received.
-    NOTE: for now this is hardcoded for UBX packets.
-    @return: True if all packets have been received, False otherwise.
-    """
-    check_device_exists(device)
 
-    timeout = cfg['timeout (s)']
-    ubx_cfg = cfg['protocol']['ubx']
-
-    # Initialize dict for recording whether we're receiving packets of each type.
-    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
-
-    try:
-        with Serial(device, BAUDRATE, timeout=timeout) as stream:
-            ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-            print('Verifying packets are being received... (If stuck at this step, re-run with the "init" option.)')
-
-            for i in range(timeout):  # assumes config packets are send every second -> waits for timeout seconds.
-                raw_data, parsed_data = ubr.read() # blocking read operation -> waits for next UBX_PROTOCOL packet.
-                if parsed_data:
-                    for pkt_id in pkt_id_flags.keys():
-                        if parsed_data.identity == pkt_id:
-                            pkt_id_flags[pkt_id] = True
-                if all(pkt_id_flags.values()):
-                    print('All packets are being received.\n')
-                    return True
-    except KeyboardInterrupt:
-        print('Interrupted by KeyboardInterrupt.')
-        return False
-    raise Exception(f'Not all packets are being received. Check the following for details: {pkt_id_flags=}')
-
-""" Redis utility functions """
-def get_f9t_redis_key(chip_name, chip_uid, prot_msg):
-    """
-    Returns the hashset key for the given prot_msg and chip
-    @param chip_uid: the unique chip ID returned by the `UBX-SEC-UNIQID` message. Must be a 10-digit hex integer.
-    @param prot_msg: u-blox protocol message name (e.g. `UBX-TIM-TP`) as specified in the ZED-F9T data sheet.
-    @param chip_name: chip name. For now, this will always be `ZED-F9T`, but in the future we may want to record data for other u-blox chip types.
-    @return: Redis hash set key in the following format "UBLOX_{chip_name}_{chip_uid}_{data_type}", where each field is uppercase.
-    """
-    # Verify the chip_uid is a 10-digit hex number
-    chip_uid_emsg = f"chip_uid must be a 10-digit hex integer. Got {chip_uid=}"
-    try:
-        assert len(chip_uid) == 10, chip_uid_emsg
-        int(chip_uid, 16)   # verifies chip_uid is a valid hex integer
-    except ValueError or AssertionError:
-        raise ValueError(chip_uid_emsg)
-    return f"UBLOX_{chip_name.upper()}_{chip_uid.upper()}_{prot_msg.upper()}"
 
 """ Initialize u-blox device. """
-
-def check_device_exists(device):
-    if device is not None:
-        if not os.path.exists(device):
-            raise FileNotFoundError(f'Cannot access {device}')
-        return True
-    return False
-
 def init(args):
     """Configure device and verify all desired packets are being received."""
     device = args.device

@@ -8,6 +8,7 @@ The server requires the following to correctly:
 """
 import random
 from concurrent import futures
+import threading
 import logging
 import time
 import re
@@ -27,8 +28,8 @@ import ublox_control_pb2
 import ublox_control_pb2_grpc
 
 # alias messages to improve readability
-from ublox_control_pb2 import TestCase, InitSummary
 from ublox_control_resources import *
+from init_f9t_tests import run_all_init_f9t_tests, is_os_posix
 
 # Default chip state upon server startup.
 default_f9t_state = {
@@ -41,45 +42,8 @@ default_f9t_state = {
             "packet_ids": [], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
         }
     },
-    "timeout (s)": 5,
-    "init_success": False,
+    "timeout (s)": 5
 }
-
-
-
-def run_initialization_tests(
-        test_fn_list: List[Callable[..., Tuple[bool, str]]]
-) -> Tuple[type(InitSummary.InitStatus), type(TestCase.TestResult)]:
-    """
-    Runs each test function in [test_functions].
-    To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
-    Returns enum init_status and a list of test_results.
-    """
-
-    def get_test_name(test_fn):
-        return f"%s.%s" % (test_fn.__module__, test_fn.__name__)
-
-    all_pass = True
-    test_results = []
-    for test_fn in test_fn_list:
-        result, message = test_fn()
-        if result:
-            result = TestCase.TestResult.PASS
-        else:
-            result = TestCase.TestResult.FAIL
-            all_pass = False
-
-        test_result = ublox_control_pb2.TestCase(
-            name=get_test_name(test_fn),
-            result=result,
-            message=message
-        )
-        test_results.append(test_result)
-    if all_pass:
-        init_status = InitSummary.InitStatus.SUCCESS
-    else:
-        init_status = InitSummary.InitStatus.FAILURE
-    return init_status, test_results
 
 
 """gRPC server wrapper for UbloxControl RPCs"""
@@ -88,17 +52,52 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
     def __init__(self):
+        # Mesa monitor for RW lock guarding access to F9t data.
+        #   "Writers" = threads executing the InitF9t RPC.
+        #   "Readers" = threads executing any other UbloxControl RPC that depends on F9t data
+        self.shared_state = {
+            "is_f9t_valid": False,
+            "wr": 0, # waiting readers
+            "ww": 0, # waiting writers
+            "ar": 0, # active readers
+            "aw": 0, # active writers
+        }
+        self.lock = threading.Lock()
+        self.condvar = threading.Condition(self.rw_lock)
+
+        # F9t config
         self.f9t_state = default_f9t_state.copy()
         self.packet_ids = ['NAV-TIMEUTC', 'TIM-TP']
-        self.init_tests = [test_0, test_1]
+        self.init_tests = [
+            is_os_posix
+        ]
 
     def InitF9t(self, request, context):
-        """Configure a connected F9t chip"""
-        f9t_config_dict = MessageToDict(request.config, preserving_proto_field_name=True)
-        # TODO: add real validation checks here
-        init_status, test_results = run_initialization_tests(self.init_tests)
+        """Configure a connected F9t chip. [writer]"""
+        f9t_config_dict = MessageToDict(request.config)
+        if self.lock.acquire(blocking=True, timeout=2):
+            # BEGIN Critical section: synchronize access to functions that modify F9t state
+            # Wait until no active readers or writers
+            self.shared_state['ww'] += 1  # This thread is a "writer"
+            while not (self.shared_state['aw'] > 0 or self.shared_state['ar'] > 0):
+                self.condvar.wait()
 
-        message = ""
+            self.shared_state['ww'] -= 1
+            self.shared_state['aw'] += 1
+            self.lock.release()
+            # END critical section: synchronize access to functions that modify F9t state
+
+            # TODO: do initialization work here
+
+            # Run tests to verify f9t initialization
+            init_status, test_results = run_all_init_f9t_tests(self.init_tests)
+            message = ""
+            # TODO: add checkout and wake up a waiting writer or all waiting readers
+            self.f9t_is_valid = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
+        else:
+            init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
+            message = "Failed to acquire the lock for F9t configuration"
+            test_results = []
 
         init_summary = ublox_control_pb2.InitSummary(
             init_status=init_status,
@@ -124,16 +123,17 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             }
             timestamp = timestamp_pb2.Timestamp()
             timestamp.GetCurrentTime()
+
+            packet_data = ublox_control_pb2.PacketData(
+                packet_id=packet_id,
+                parsed_data=ParseDict(parsed_data, Struct()),
+                timestamp=timestamp
+            )
+
             # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
             if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
-                packet_data = ublox_control_pb2.PacketData(
-                    packet_id=packet_id,
-                    parsed_data=ParseDict(parsed_data, Struct()),
-                    timestamp=timestamp
-                )
                 yield packet_data
-            else:
-                time.sleep(0.01)  # Avoid tight loops
+
 
 def serve():
     """Create the gRPC server threadpool and start providing the UbloxControl service."""

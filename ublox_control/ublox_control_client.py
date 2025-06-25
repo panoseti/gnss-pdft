@@ -35,19 +35,6 @@ from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig
 from ublox_control_resources import *
 
 
-# Configuration for metadata capture from the u-blox ZED-F9T timing chip
-# TODO: make this a separate config file and track with version control etc.
-default_f9t_config = {
-    "chip_name": "ZED-F9T",
-    "device": None, # /dev file connection
-    "protocol": {
-        "ubx": {
-            "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
-            "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
-        }
-    },
-    "timeout (s)": 7,
-}
 
 def get_services(channel):
     """Prints all available RPCs for the UbloxControl service represented by [channel]."""
@@ -78,7 +65,7 @@ def init_f9t(stub, f9t_config):
     print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
     print(f'{init_summary.message=}')
     print("init_summary.f9t_state=", end='')
-    pprint(MessageToDict(init_summary.f9t_state), expand_all=True)
+    pprint(MessageToDict(init_summary.f9t_state, preserving_proto_field_name=True), expand_all=True)
     for i, test_result in enumerate(init_summary.test_results):
         print(f'TEST {i}:')
         print("\t" + str(test_result).replace("\n", "\n\t"))

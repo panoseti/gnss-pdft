@@ -17,94 +17,11 @@ import datetime
 import argparse
 
 
-from ublox_control_client import f9t_config
 from ublox_control_resources import *
 
-BAUDRATE = 38400
 packet_data_dir = 'data'
 
 """Server utility functions"""
-
-def get_experiment_dir(start_timestamp, device):
-    device_name = device.split('/')[-1]
-    return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
-
-def get_f9t_unique_id(device):
-    """
-    Poll the unique ID of the f9t chip.
-    We need to write a custom poll command because the pyubx2 library doesn't implement this cfg message.
-    """
-    # UBX-SEC-UNIQID poll message (class 0x27, id 0x03)
-    UBX_UNIQID_POLL = bytes([0xB5, 0x62, 0x27, 0x03, 0x00, 0x00, 0x2A, 0x8F])
-    with Serial(device, BAUDRATE, timeout=2) as stream:
-        ubr = UBXReader(stream)
-        # Flush any existing input
-        stream.reset_input_buffer()
-        print("Sending UBX-SEC-UNIQID poll...")
-        stream.write(UBX_UNIQID_POLL)
-        stream.flush()
-        # Wait for and parse the response
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > 5:
-                print("Timeout waiting for response.")
-                break
-            raw_data, parsed_data = ubr.read()
-            if parsed_data and parsed_data.identity == 'SEC-UNIQID':
-                # The unique ID is in parsed_data.uniqueId (should be bytes)
-                unique_id = parsed_data.uniqueId.hex()
-                print(f"Unique ID: {unique_id}")
-                return unique_id
-            # # Look for UBX-SEC-UNIQID response (class 0x27, id 0x03)
-            # if raw_data and raw_data[2] == 0x27 and raw_data[3] == 0x03:
-            #     # Payload is at raw_data[6:-2], uniqueId is bytes 4:36 of payload
-            #     payload = raw_data[6:-2]
-            #     if len(payload) >= 36:
-            #         unique_id = payload[4:36].hex()
-            #         print(f"ZED-F9T Unique ID: {unique_id}")
-            #     else:
-            #         print("Received payload too short.")
-            #     break
-
-def poll_f9t_config(device, cfg=f9t_config):
-    """
-    Poll the current configuration settings for each cfg_key specified in the cfg dict.
-    On startup, should be 0 by default.
-    """
-    layer = POLL_LAYER_RAM
-    position = 0
-    ubx_cfg = cfg['protocol']['ubx']
-
-    msg = UBXMessage.config_poll(layer, position, keys=ubx_cfg['cfg_keys'])
-    print('Polling configuration:')
-    with Serial(device, BAUDRATE, timeout=ubx_cfg['timeout (s)']) as stream:
-        stream.write(msg.serialize())
-        ubr_poll_status = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        raw_data, parsed_data = ubr_poll_status.read()
-        if parsed_data is not None:
-            print('\t', parsed_data)
-
-
-def set_f9t_config(device, cfg=f9t_config):
-    """Tell chip to start sending metadata packets for each cfg_key"""
-    layer = SET_LAYER_RAM
-    transaction = TXN_NONE
-    timeout = cfg['timeout (s)']
-    ubx_cfg = cfg['protocol']['ubx']
-
-    # Tell chip to start sending metadata packets for each cfg_key. Note: Unspecified keys are initialized to 0.
-    cfgData = [(cfg_key, 1) for cfg_key in ubx_cfg['cfg_keys']]  # 1 = start sending packets of type cfg_key.
-    msg = UBXMessage.config_set(layer, transaction, cfgData)
-
-    with Serial(device, BAUDRATE, timeout=timeout) as stream:
-        print('Updating configuration:')
-        stream.write(msg.serialize())
-        ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
-        for i in range(1):
-            raw_data, parsed_data = ubr.read()
-            if parsed_data is not None:
-                print('\t', parsed_data)
-
 
 
 """ Initialize u-blox device. """
@@ -179,7 +96,7 @@ def collect_data(r: redis.Redis, device: str, cfg=f9t_config):
             packet_cache[pkt_id]['valid'] = False # invalidate packet cache entry
         pipe.execute()
 
-    with (Serial(device, BAUDRATE, timeout=timeout) as stream):
+    with (Serial(device, F9T_BAUDRATE, timeout=timeout) as stream):
         ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
         while True:
             # Wait for next packet (blocking read)

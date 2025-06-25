@@ -9,10 +9,8 @@ The server requires the following to correctly:
 import random
 from concurrent import futures
 import threading
-import logging
 import time
 import re
-from rich import print
 
 import grpc
 
@@ -81,50 +79,46 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         # test suite that is run after every F9t configuration operation
         self.init_tests = [ is_os_posix ]
 
+        self._logger = logging.getLogger(__name__)
+
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
         tid = threading.get_ident()
         f9t_config_dict = MessageToDict(request.config)
-        if self.lock.acquire(timeout=1):
-            try:
+        try:
+            with self.lock:
                 # BEGIN check-in critical section
                 # Wait until no active readers or active writers
                 self._rw_lock_state['ww'] += 1
-                print(f"{tid=}: InitF9t check-in (start): {self._rw_lock_state=}")
+                self._logger.debug(f"check-in (start): {self._rw_lock_state=}")
                 while (self._rw_lock_state['aw'] > 0) or (self._rw_lock_state['ar'] > 0):
                     # This RPC is a "writer"
                     self.writer_cond.wait()
                 self._rw_lock_state['ww'] -= 1
                 self._rw_lock_state['aw'] += 1
-                print(f"{tid=}: InitF9t check-in (end): {self._rw_lock_state=}")
-                self.lock.release()
+                self._logger.debug(f"check-in (end): {self._rw_lock_state=}")
                 # END check-in critical section
-                time.sleep(1)  # add delay to expose race conditions
+            time.sleep(1)  # add delay to expose race conditions
 
-                # TODO: do F9t initialization work here
+            # TODO: do F9t initialization work here
 
-                # Run tests to verify f9t initialization
-                init_status, test_results = run_all_init_f9t_tests(self.init_tests)
-                message = "Completed initialization and ran tests"
+            # Run tests to verify f9t initialization
+            init_status, test_results = run_all_init_f9t_tests(self.init_tests)
+            message = "Completed initialization and ran tests"
 
-                # TODO: add checkout and wake up a waiting writer or all waiting readers
-                self._f9t_state['is_valid'] = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
-            finally:
-                with self.lock:
-                    # BEGIN check-out critical section
-                    print(f"{tid=}: InitF9t check-out (start): {self._rw_lock_state=}")
-                    if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
-                        self.writer_cond.notify()
-                    elif self._rw_lock_state['wr'] > 0:
-                        self.reader_cond.notify_all()
-                    self._rw_lock_state['aw'] -= 1
-                    print(f"{tid=}: InitF9t check-out (end): {self._rw_lock_state=}")
-                    # END check-out critical section
-
-        else:
-            init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
-            message = "Failed to acquire the lock for F9t configuration"
-            test_results = []
+            # TODO: add checkout and wake up a waiting writer or all waiting readers
+            self._f9t_state['is_valid'] = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
+        finally:
+            with self.lock:
+                # BEGIN check-out critical section
+                self._logger.debug(f"check-out (start): {self._rw_lock_state=}")
+                if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
+                    self.writer_cond.notify()
+                elif self._rw_lock_state['wr'] > 0:
+                    self.reader_cond.notify_all()
+                self._rw_lock_state['aw'] = max(0, self._rw_lock_state['aw'] - 1)
+                self._logger.debug(f"check-out (end): {self._rw_lock_state=}")
+                # END check-out critical section
 
         # Send summary of initialization process to client
         init_summary = ublox_control_pb2.InitSummary(
@@ -138,56 +132,55 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     def CapturePackets(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
         tid = threading.get_ident()
-        if self.lock.acquire(timeout=1):
-            try:
+        try:
+            with self.lock:
                 # BEGIN check-in critical section
                 # Wait until no active writers
                 self._rw_lock_state['wr'] += 1
-                print(f"{tid=}: CapturePackets check-in (start): {self._rw_lock_state=}")
+                self._logger.debug(f"check-in (start): {self._rw_lock_state=}")
                 while self._rw_lock_state['aw'] > 0 or self._rw_lock_state['ww'] > 0:
                     # This RPC is a "reader"
                     self.reader_cond.wait()
                 self._rw_lock_state['wr'] -= 1
                 self._rw_lock_state['ar'] += 1
-                print(f"{tid=}: CapturePackets check-in (end): {self._rw_lock_state=}")
-                self.lock.release()
+                self._logger.debug(f"check-in (end): {self._rw_lock_state=}")
                 # END check-in critical section
 
-                packet_id_pattern = request.packet_id_pattern
-                while context.is_active():
-                    # Generate next response
-                    time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
-                    # TODO: replace these hard-coded values with packets received from the connected u-blox chip
-                    packet_id = "TEST"
-                    parsed_data = {
-                        'qErr': random.randint(-4, 4),
-                        'field2': 'hello',
-                        'field3': random.random(),
-                        'field4': None
-                    }
-                    timestamp = timestamp_pb2.Timestamp()
-                    timestamp.GetCurrentTime()
+            packet_id_pattern = request.packet_id_pattern
+            while context.is_active():
+                # Generate next response
+                time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
+                # TODO: replace these hard-coded values with packets received from the connected u-blox chip
+                packet_id = "TEST"
+                parsed_data = {
+                    'qErr': random.randint(-4, 4),
+                    'field2': 'hello',
+                    'field3': random.random(),
+                    'field4': None
+                }
+                timestamp = timestamp_pb2.Timestamp()
+                timestamp.GetCurrentTime()
 
-                    packet_data = ublox_control_pb2.PacketData(
-                        packet_id=packet_id,
-                        parsed_data=ParseDict(parsed_data, Struct()),
-                        timestamp=timestamp
-                    )
+                packet_data = ublox_control_pb2.PacketData(
+                    packet_id=packet_id,
+                    parsed_data=ParseDict(parsed_data, Struct()),
+                    timestamp=timestamp
+                )
 
-                    # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
-                    if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
-                        yield packet_data
-            finally:
-                with self.lock:
-                    # BEGIN check-out critical section
-                    print(f"{tid=}: CapturePackets check-out (start): {self._rw_lock_state=}")
-                    if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
-                        self.writer_cond.notify()
-                    elif self._rw_lock_state['wr'] > 0:
-                        self.reader_cond.notify_all()
-                    self._rw_lock_state['ar'] -= 1
-                    print(f"{tid=}: CapturePackets check-out (end): {self._rw_lock_state=}")
-                    # END check-out critical section
+                # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
+                if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
+                    yield packet_data
+        finally:
+            with self.lock:
+                # BEGIN check-out critical section
+                self._logger.debug(f"check-out (start): {self._rw_lock_state=}")
+                if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
+                    self.writer_cond.notify()
+                elif self._rw_lock_state['wr'] > 0:
+                    self.reader_cond.notify_all()
+                self._rw_lock_state['ar'] = max(0, self._rw_lock_state['ar'] - 1)
+                self._logger.debug(f"check-out (end): {self._rw_lock_state=}")
+                # END check-out critical section
 
 
 def serve():
@@ -207,14 +200,28 @@ def serve():
     # Start gRPC and configure to listen on port 50051
     server.add_insecure_port("[::]:50051")
     server.start()
-    print("[gRPC server is running]\n[Enter CTRL+C to stop]")
+    print(f"The gRPC services {SERVICE_NAMES} are running.\nEnter CTRL+C to stop them.")
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("[^C received, shutting down the server]")
+        print("'^C' received, shutting down the server.")
 
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    """ Configure logger """
+    # Define the log format string
+    LOG_FORMAT = (
+        "[tid=%(thread)d] [%(funcName)s()] %(message)s "
+        # "[%(filename)s:%(lineno)d %(funcName)s()]"
+    )
+
+    # Configure logging with RichHandler
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format=LOG_FORMAT,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[RichHandler(rich_tracebacks=True)]
+    )
+
     serve()

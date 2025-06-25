@@ -3,13 +3,17 @@ Common functions for gRPC UbloxControl service.
 """
 import os
 import json
+import logging
 from typing import List, Callable, Tuple
 from contextlib import contextmanager
+
+from rich import print
+from rich.logging import RichHandler
+from rich.pretty import pprint
 
 import datetime
 from unittest import TestResult
 
-# import redis
 from serial import Serial
 from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYER_RAM, TXN_COMMIT, TXN_NONE
 
@@ -17,6 +21,8 @@ import ublox_control_pb2
 
 # message enums
 from ublox_control_pb2 import TestCase, InitSummary, CaptureCommand
+
+
 
 """ Config globals"""
 ublox_control_config_file = 'ublox_control_config.json'

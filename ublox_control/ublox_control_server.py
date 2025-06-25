@@ -63,10 +63,10 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         #   "Writers" = threads executing the InitF9t RPC.
         #   "Readers" = threads executing any other UbloxControl RPC that depends on F9t data
         self._rw_lock_state = {
-            "wr": 0, # waiting readers
-            "ww": 0, # waiting writers
-            "ar": 0, # active readers
-            "aw": 0, # active writers
+            "wr": 0,  # waiting readers
+            "ww": 0,  # waiting writers
+            "ar": 0,  # active readers
+            "aw": 0,  # active writers
         }
         self.lock = threading.Lock()
         self.reader_cond = threading.Condition(self.lock)

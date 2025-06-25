@@ -5,6 +5,8 @@ Run this on the headnode to configure the u-blox GNSS receivers in remote domes.
 """
 import logging
 import queue
+import random
+
 from rich import print
 from rich.pretty import pprint
 import re
@@ -81,7 +83,7 @@ def capture_packets(stub, packet_id_pattern=""):
     packet_data_stream = stub.CapturePackets(
         make_capture_command(packet_id_pattern)
     )
-    for packet_data in packet_data_stream:
+    for i, packet_data in zip(range(random.randint(100, 100)), packet_data_stream):
         packet_id = packet_data.packet_id
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime()
@@ -101,15 +103,16 @@ def run(host, port=50051):
         print("-------------- ServerReflection --------------")
         get_services(channel)
 
-        print("-------------- InitF9t --------------")
-        init_f9t(stub, default_f9t_config)
+        while True:
+            print("-------------- InitF9t --------------")
+            init_f9t(stub, default_f9t_config)
 
-        print("-------------- CapturePackets --------------")
-        capture_packets(stub)
+            print("-------------- CapturePackets --------------")
+            capture_packets(stub)
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    # run(host="10.0.0.60")
-    run(host="localhost")
+    run(host="10.0.0.60")
+    # run(host="localhost")
 

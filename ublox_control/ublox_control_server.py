@@ -12,6 +12,7 @@ import threading
 import logging
 import time
 import re
+from rich import print
 
 import grpc
 
@@ -31,18 +32,22 @@ import ublox_control_pb2_grpc
 from ublox_control_resources import *
 from init_f9t_tests import run_all_init_f9t_tests, is_os_posix
 
+# etc = {
+#     "protocol": {
+#         "ubx": {
+#             "device": None,
+#             "cfg_keys": [],  # default cfg keys to poll
+#             "packet_ids": [],  # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
+#         }
+#     },
+# }
 # Default chip state upon server startup.
 default_f9t_state = {
     "chip_name": "ZED-F9T",
     "chip_uid": None,
-    "protocol": {
-        "ubx": {
-            "device": None,
-            "cfg_keys": [], # default cfg keys to poll
-            "packet_ids": [], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
-        }
-    },
-    "timeout (s)": 5
+    "timeout (s)": 5,
+    "baudrate": 38_400,
+    "is_valid": False,
 }
 
 
@@ -52,87 +57,137 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
     def __init__(self):
-        # Mesa monitor for RW lock guarding access to F9t data.
+        # verify the server is running on a POSIX-compliant system
+        test_result, msg = is_os_posix()
+        assert test_result == True, msg
+
+        # Mesa monitor for synchronizing access to functions that modify F9t state
         #   "Writers" = threads executing the InitF9t RPC.
         #   "Readers" = threads executing any other UbloxControl RPC that depends on F9t data
-        self.shared_state = {
-            "is_f9t_valid": False,
+        self._rw_lock_state = {
             "wr": 0, # waiting readers
             "ww": 0, # waiting writers
             "ar": 0, # active readers
             "aw": 0, # active writers
         }
         self.lock = threading.Lock()
-        self.condvar = threading.Condition(self.rw_lock)
+        self.reader_cond = threading.Condition(self.lock)
+        self.writer_cond = threading.Condition(self.lock)
 
-        # F9t config
-        self.f9t_state = default_f9t_state.copy()
+        # F9t state
+        self._f9t_state = default_f9t_state.copy()
         self.packet_ids = ['NAV-TIMEUTC', 'TIM-TP']
-        self.init_tests = [
-            is_os_posix
-        ]
+
+        # test suite that is run after every F9t configuration operation
+        self.init_tests = [ is_os_posix ]
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
+        tid = threading.get_ident()
         f9t_config_dict = MessageToDict(request.config)
-        if self.lock.acquire(blocking=True, timeout=2):
-            # BEGIN Critical section: synchronize access to functions that modify F9t state
-            # Wait until no active readers or writers
-            self.shared_state['ww'] += 1  # This thread is a "writer"
-            while not (self.shared_state['aw'] > 0 or self.shared_state['ar'] > 0):
-                self.condvar.wait()
+        if self.lock.acquire(timeout=1):
+            try:
+                # BEGIN check-in critical section
+                # Wait until no active readers or active writers
+                self._rw_lock_state['ww'] += 1
+                print(f"{tid=}: InitF9t check-in (start): {self._rw_lock_state=}")
+                while (self._rw_lock_state['aw'] > 0) or (self._rw_lock_state['ar'] > 0):
+                    # This RPC is a "writer"
+                    self.writer_cond.wait()
+                self._rw_lock_state['ww'] -= 1
+                self._rw_lock_state['aw'] += 1
+                print(f"{tid=}: InitF9t check-in (end): {self._rw_lock_state=}")
+                self.lock.release()
+                # END check-in critical section
+                time.sleep(1)  # add delay to expose race conditions
 
-            self.shared_state['ww'] -= 1
-            self.shared_state['aw'] += 1
-            self.lock.release()
-            # END critical section: synchronize access to functions that modify F9t state
+                # TODO: do F9t initialization work here
 
-            # TODO: do initialization work here
+                # Run tests to verify f9t initialization
+                init_status, test_results = run_all_init_f9t_tests(self.init_tests)
+                message = "Completed initialization and ran tests"
 
-            # Run tests to verify f9t initialization
-            init_status, test_results = run_all_init_f9t_tests(self.init_tests)
-            message = ""
-            # TODO: add checkout and wake up a waiting writer or all waiting readers
-            self.f9t_is_valid = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
+                # TODO: add checkout and wake up a waiting writer or all waiting readers
+                self._f9t_state['is_valid'] = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
+            finally:
+                with self.lock:
+                    # BEGIN check-out critical section
+                    print(f"{tid=}: InitF9t check-out (start): {self._rw_lock_state=}")
+                    if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
+                        self.writer_cond.notify()
+                    elif self._rw_lock_state['wr'] > 0:
+                        self.reader_cond.notify_all()
+                    self._rw_lock_state['aw'] -= 1
+                    print(f"{tid=}: InitF9t check-out (end): {self._rw_lock_state=}")
+                    # END check-out critical section
+
         else:
             init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
             message = "Failed to acquire the lock for F9t configuration"
             test_results = []
 
+        # Send summary of initialization process to client
         init_summary = ublox_control_pb2.InitSummary(
             init_status=init_status,
             message=message,
-            f9t_state=ParseDict(self.f9t_state, Struct()),
+            f9t_state=ParseDict(self._f9t_state, Struct()),
             test_results=test_results,
         )
         return init_summary
 
     def CapturePackets(self, request, context):
-        """Forward u-blox packets to the client"""
-        packet_id_pattern = request.packet_id_pattern
-        while context.is_active():
-            # Generate next response
-            time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
-            # TODO: replace these hard-coded values with packets received from the connected u-blox chip
-            packet_id = "TEST"
-            parsed_data = {
-                'qErr': random.randint(-4, 4),
-                'field2': 'hello',
-                'field3': random.random(),
-                'field4': None
-            }
-            timestamp = timestamp_pb2.Timestamp()
-            timestamp.GetCurrentTime()
+        """Forward u-blox packets to the client. [reader]"""
+        tid = threading.get_ident()
+        if self.lock.acquire(timeout=1):
+            try:
+                # BEGIN check-in critical section
+                # Wait until no active writers
+                self._rw_lock_state['wr'] += 1
+                print(f"{tid=}: CapturePackets check-in (start): {self._rw_lock_state=}")
+                while self._rw_lock_state['aw'] > 0 or self._rw_lock_state['ww'] > 0:
+                    # This RPC is a "reader"
+                    self.reader_cond.wait()
+                self._rw_lock_state['wr'] -= 1
+                self._rw_lock_state['ar'] += 1
+                print(f"{tid=}: CapturePackets check-in (end): {self._rw_lock_state=}")
+                self.lock.release()
+                # END check-in critical section
 
-            packet_data = ublox_control_pb2.PacketData(
-                packet_id=packet_id,
-                parsed_data=ParseDict(parsed_data, Struct()),
-                timestamp=timestamp
-            )
+                packet_id_pattern = request.packet_id_pattern
+                while context.is_active():
+                    # Generate next response
+                    time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
+                    # TODO: replace these hard-coded values with packets received from the connected u-blox chip
+                    packet_id = "TEST"
+                    parsed_data = {
+                        'qErr': random.randint(-4, 4),
+                        'field2': 'hello',
+                        'field3': random.random(),
+                        'field4': None
+                    }
+                    timestamp = timestamp_pb2.Timestamp()
+                    timestamp.GetCurrentTime()
 
-            # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
-            if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
-                yield packet_data
+                    packet_data = ublox_control_pb2.PacketData(
+                        packet_id=packet_id,
+                        parsed_data=ParseDict(parsed_data, Struct()),
+                        timestamp=timestamp
+                    )
+
+                    # send packet if packet_id matches packet_id_pattern or the pattern is an empty string
+                    if not packet_id_pattern or re.search(packet_id_pattern, packet_id):
+                        yield packet_data
+            finally:
+                with self.lock:
+                    # BEGIN check-out critical section
+                    print(f"{tid=}: CapturePackets check-out (start): {self._rw_lock_state=}")
+                    if self._rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
+                        self.writer_cond.notify()
+                    elif self._rw_lock_state['wr'] > 0:
+                        self.reader_cond.notify_all()
+                    self._rw_lock_state['ar'] -= 1
+                    print(f"{tid=}: CapturePackets check-out (end): {self._rw_lock_state=}")
+                    # END check-out critical section
 
 
 def serve():

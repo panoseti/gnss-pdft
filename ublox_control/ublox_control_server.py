@@ -11,6 +11,7 @@ from concurrent import futures
 import threading
 import time
 import re
+import json
 
 import grpc
 
@@ -30,36 +31,20 @@ import ublox_control_pb2_grpc
 from ublox_control_resources import *
 from init_f9t_tests import run_all_init_f9t_tests, is_os_posix
 
-# etc = {
-#     "protocol": {
-#         "ubx": {
-#             "device": None,
-#             "cfg_keys": [],  # default cfg keys to poll
-#             "packet_ids": [],  # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
-#         }
-#     },
-# }
-# Default chip state upon server startup.
-default_f9t_state = {
-    "chip_name": "ZED-F9T",
-    "chip_uid": None,
-    "timeout (s)": 5,
-    "baudrate": 38_400,
-    "is_valid": False,
-}
 
 
-"""gRPC server wrapper for UbloxControl RPCs"""
+"""gRPC server implementing UbloxControl RPCs"""
 
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
+    server_cfg_file = "ublox_control_server_config.json"
 
     def __init__(self):
         # verify the server is running on a POSIX-compliant system
         test_result, msg = is_os_posix()
-        assert test_result == True, msg
+        assert test_result, msg
 
-        # Mesa monitor for synchronizing access to functions that modify F9t state
+        # Initialize mesa monitor for synchronizing access to the F9T chip
         #   "Writers" = threads executing the InitF9t RPC.
         #   "Readers" = threads executing any other UbloxControl RPC that depends on F9t data
         self._rw_lock_state = {
@@ -72,14 +57,38 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         self.reader_cond = threading.Condition(self.lock)
         self.writer_cond = threading.Condition(self.lock)
 
-        # F9t state
-        self._f9t_state = default_f9t_state.copy()
-        self.packet_ids = ['NAV-TIMEUTC', 'TIM-TP']
+        # Load server configuration
+        with open(server_cfg_file, "r") as f:
+            self._server_cfg = json.load(f)
 
-        # test suite that is run after every F9t configuration operation
-        self.init_tests = [ is_os_posix ]
+        # Load F9t configuration
+        with open(self._server_cfg["f9t_cfg_file"], "r") as f:
+            self._f9t_cfg = json.load(f)
+            # check if headnode needs to first configure F9t with an InitF9t RPC
+            if not self._server_cfg["require_headnode_init"] and self._f9t_cfg["cfg_is_valid"]:
+                self._f9t_cfg['is_init_valid'] = True
+                # TODO: setup ubx connection threads here
+            else:
+                self._f9t_cfg['is_init_valid'] = False
 
-        self._logger = logging.getLogger(__name__)
+        # Define test suite for the InitF9t RPC
+        self.init_f9t_tests = [
+            is_os_posix,
+        ]
+
+        # Configure the server's logger
+        LOG_FORMAT = (
+            "[tid=%(thread)d] [%(funcName)s()] %(message)s "
+            # "[%(filename)s:%(lineno)d %(funcName)s()]"
+        )
+
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format=LOG_FORMAT,
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[RichHandler(rich_tracebacks=True)]
+        )
+        self.logger = logging.getLogger(__name__)
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
@@ -107,7 +116,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             message = "Completed initialization and ran tests"
 
             # TODO: add checkout and wake up a waiting writer or all waiting readers
-            self._f9t_state['is_valid'] = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
+            self._f9t_cfg['is_init_valid'] = (init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS)
         finally:
             with self.lock:
                 # BEGIN check-out critical section
@@ -209,19 +218,6 @@ def serve():
 
 
 if __name__ == "__main__":
-    """ Configure logger """
-    # Define the log format string
-    LOG_FORMAT = (
-        "[tid=%(thread)d] [%(funcName)s()] %(message)s "
-        # "[%(filename)s:%(lineno)d %(funcName)s()]"
-    )
 
-    # Configure logging with RichHandler
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=LOG_FORMAT,
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[RichHandler(rich_tracebacks=True)]
-    )
 
     serve()

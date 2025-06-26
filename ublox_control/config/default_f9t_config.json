@@ -1,0 +1,13 @@
+{
+  "is_valid": false,
+  "chip_name": "ZED-F9T",
+  "chip_uid": "",
+  "device_path": "/dev/...",
+  "timeout": 1,
+  "baudrate": 38400,
+  "comments": "",
+  "set_cfg_key": {
+    "CFG_MSGOUT_UBX_TIM_TP_USB": 1,
+    "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB": 1
+  }
+}

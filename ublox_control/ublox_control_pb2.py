@@ -26,7 +26,7 @@ from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"+\n\x0e\x43\x61ptureCommand\x12\x19\n\x11packet_id_pattern\x18\x01 \x01(\t\"|\n\nPacketData\x12\x11\n\tpacket_id\x18\x01 \x01(\t\x12,\n\x0bparsed_data\x18\x02 \x01(\x0b\x32\x17.google.protobuf.Struct\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"4\n\tF9tConfig\x12\'\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x17.google.protobuf.Struct\"\x8d\x01\n\x08TestCase\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x31\n\x06result\x18\x02 \x01(\x0e\x32!.ubloxcontrol.TestCase.TestResult\x12\x0f\n\x07message\x18\x03 \x01(\t\"/\n\nTestResult\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04PASS\x10\x01\x12\x08\n\x04\x46\x41IL\x10\x02\"\xfe\x01\n\x0bInitSummary\x12\x39\n\x0binit_status\x18\x01 \x01(\x0e\x32$.ubloxcontrol.InitSummary.InitStatus\x12\x0f\n\x07message\x18\x02 \x01(\t\x12*\n\tf9t_state\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12,\n\x0ctest_results\x18\x04 \x03(\x0b\x32\x16.ubloxcontrol.TestCase\"I\n\nInitStatus\x12\r\n\tUNDEFINED\x10\x00\x12\x12\n\x0eINVALID_CONFIG\x10\x01\x12\x0b\n\x07SUCCESS\x10\x02\x12\x0b\n\x07\x46\x41ILURE\x10\x03\x32\x9d\x01\n\x0cUbloxControl\x12?\n\x07InitF9t\x12\x17.ubloxcontrol.F9tConfig\x1a\x19.ubloxcontrol.InitSummary\"\x00\x12L\n\x0e\x43\x61pturePackets\x12\x1c.ubloxcontrol.CaptureCommand\x1a\x18.ubloxcontrol.PacketData\"\x00\x30\x01\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13ublox_control.proto\x12\x0cubloxcontrol\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"w\n\nPacketData\x12\x0c\n\x04name\x18\x01 \x01(\t\x12,\n\x0bparsed_data\x18\x02 \x01(\x0b\x32\x17.google.protobuf.Struct\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x1f\n\x0bPollRequest\x12\x10\n\x08patterns\x18\x01 \x03(\t\"=\n\x0cPollResponse\x12-\n\x0bpacket_data\x18\x01 \x03(\x0b\x32\x18.ubloxcontrol.PacketData\"\"\n\x0e\x43\x61ptureCommand\x12\x10\n\x08patterns\x18\x01 \x03(\t\"5\n\tF9tConfig\x12(\n\x07\x66\x39t_cfg\x18\x01 \x01(\x0b\x32\x17.google.protobuf.Struct\"\x8d\x01\n\x08TestCase\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x31\n\x06result\x18\x02 \x01(\x0e\x32!.ubloxcontrol.TestCase.TestResult\x12\x0f\n\x07message\x18\x03 \x01(\t\"/\n\nTestResult\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04PASS\x10\x01\x12\x08\n\x04\x46\x41IL\x10\x02\"\xfe\x01\n\x0bInitSummary\x12\x39\n\x0binit_status\x18\x01 \x01(\x0e\x32$.ubloxcontrol.InitSummary.InitStatus\x12\x0f\n\x07message\x18\x02 \x01(\t\x12*\n\tf9t_state\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12,\n\x0ctest_results\x18\x04 \x03(\x0b\x32\x16.ubloxcontrol.TestCase\"I\n\nInitStatus\x12\r\n\tUNDEFINED\x10\x00\x12\x12\n\x0eINVALID_CONFIG\x10\x01\x12\x0b\n\x07SUCCESS\x10\x02\x12\x0b\n\x07\x46\x41ILURE\x10\x03\x32\xe4\x01\n\x0cUbloxControl\x12?\n\x07InitF9t\x12\x17.ubloxcontrol.F9tConfig\x1a\x19.ubloxcontrol.InitSummary\"\x00\x12\x45\n\nPollConfig\x12\x19.ubloxcontrol.PollRequest\x1a\x1a.ubloxcontrol.PollResponse\"\x00\x12L\n\x0e\x43\x61pturePackets\x12\x1c.ubloxcontrol.CaptureCommand\x1a\x18.ubloxcontrol.PacketData\"\x00\x30\x01\x42:\n\x1aio.gnss-pdft.ublox_controlB\x11UbloxControlProtoP\x01\xa2\x02\x06UBXCTLb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,20 +34,24 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ublox_control_pb2', _global
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\032io.gnss-pdft.ublox_controlB\021UbloxControlProtoP\001\242\002\006UBXCTL'
-  _globals['_CAPTURECOMMAND']._serialized_start=100
-  _globals['_CAPTURECOMMAND']._serialized_end=143
-  _globals['_PACKETDATA']._serialized_start=145
-  _globals['_PACKETDATA']._serialized_end=269
-  _globals['_F9TCONFIG']._serialized_start=271
-  _globals['_F9TCONFIG']._serialized_end=323
-  _globals['_TESTCASE']._serialized_start=326
-  _globals['_TESTCASE']._serialized_end=467
-  _globals['_TESTCASE_TESTRESULT']._serialized_start=420
-  _globals['_TESTCASE_TESTRESULT']._serialized_end=467
-  _globals['_INITSUMMARY']._serialized_start=470
-  _globals['_INITSUMMARY']._serialized_end=724
-  _globals['_INITSUMMARY_INITSTATUS']._serialized_start=651
-  _globals['_INITSUMMARY_INITSTATUS']._serialized_end=724
-  _globals['_UBLOXCONTROL']._serialized_start=727
-  _globals['_UBLOXCONTROL']._serialized_end=884
+  _globals['_PACKETDATA']._serialized_start=100
+  _globals['_PACKETDATA']._serialized_end=219
+  _globals['_POLLREQUEST']._serialized_start=221
+  _globals['_POLLREQUEST']._serialized_end=252
+  _globals['_POLLRESPONSE']._serialized_start=254
+  _globals['_POLLRESPONSE']._serialized_end=315
+  _globals['_CAPTURECOMMAND']._serialized_start=317
+  _globals['_CAPTURECOMMAND']._serialized_end=351
+  _globals['_F9TCONFIG']._serialized_start=353
+  _globals['_F9TCONFIG']._serialized_end=406
+  _globals['_TESTCASE']._serialized_start=409
+  _globals['_TESTCASE']._serialized_end=550
+  _globals['_TESTCASE_TESTRESULT']._serialized_start=503
+  _globals['_TESTCASE_TESTRESULT']._serialized_end=550
+  _globals['_INITSUMMARY']._serialized_start=553
+  _globals['_INITSUMMARY']._serialized_end=807
+  _globals['_INITSUMMARY_INITSTATUS']._serialized_start=734
+  _globals['_INITSUMMARY_INITSTATUS']._serialized_end=807
+  _globals['_UBLOXCONTROL']._serialized_start=810
+  _globals['_UBLOXCONTROL']._serialized_end=1038
 # @@protoc_insertion_point(module_scope)

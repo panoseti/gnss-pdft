@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 
-
 option java_multiple_files = true;
 option java_package = "io.gnss-pdft.ublox_control";
 option java_outer_classname = "UbloxControlProto";
@@ -17,52 +16,53 @@ service UbloxControl {
   // Configures a ZED-F9T chip and verifies all desired packets are being received.
   rpc InitF9t(F9tConfig) returns (InitSummary) {}
 
+  // Poll all messages defined in pyubx2/ubxtypes_poll.py matching a specified regex pattern
+  rpc PollConfig(PollRequest) returns (PollResponse) {}
+
   // Start a stream of GNSS metadata packets from the server to the headnode.
+  // Requires that the F9t chip has previously been SET to stream the desired messages.
   rpc CapturePackets(CaptureCommand) returns (stream PacketData) {}
 }
 
-// A CaptureCommand consumed by the CapturePackets RPC.
-// By default all gnss packets received from the u-blox chip
-// are forwarded to the headnode.
-// If packet_id_pattern is specified, only packets with packet_ids
-// matching packet_id_pattern will be streamed to the headnode.
-message CaptureCommand {
-  // optional: regex pattern for filtering packet_ids streamed to the headnode
-  string packet_id_pattern = 1;
-}
-
+// data returned by GET and POLL requests from the F9t chip
 message PacketData {
-  // unique name for a ublox packet
-  string packet_id = 1;
+  // message name for the ublox packet. pyubx2/ubxtypes_poll.py for supported names
+  string name = 1;
   // dictionary of parsed data in the specified packet
   google.protobuf.Struct parsed_data = 2;
   // UTC timestamp when this message was received by the DAQ node
   google.protobuf.Timestamp timestamp = 3;
 }
 
-//message UbloxPacketConfig {
-//  enum Protocol {
-//    UNDEFINED = 0;
-//    UBX = 1;
-//    NMEA = 2;
-//    RTCM3 = 3;
-//  }
+
+message PollRequest {
+  // regex patterns specifying which messages to poll
+  repeated string patterns = 1;
+}
+
+message PollResponse {
+  // list of messages for each message matching the patterns sent in PollRequest
+  repeated PacketData packet_data = 1;
+}
+
+// A CaptureCommand specifies which messages to stream with the CapturePackets RPC.
 //
-//  Protocol protocol = 1;
+// By default all packets received from the u-blox chip
+// are forwarded to the headnode.
 //
-//  // pyubx2 cfg key
-//  string cfg_key = 2;
-//
-//  // pyubx2 packet id
-//  string packet_id = 3;
-//}
+// If at least one regex pattern is given, only message names that
+// match at least of the given patterns will be streamed to the headnode.
+message CaptureCommand {
+  // optional: list of regex patterns for names to stream to the headnode
+  repeated string patterns = 1;
+}
 
 // A F9tConfig is sent by the InitF9t RPC.
 //
 // It contains a JSON object specifying F9t configuration.
 message F9tConfig {
   // JSON-formatted configuration for an F9T
-  google.protobuf.Struct config = 1;
+  google.protobuf.Struct f9t_cfg = 1;
 }
 
 

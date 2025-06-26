@@ -40,6 +40,11 @@ class UbloxControlStub(object):
                 request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
                 response_deserializer=ublox__control__pb2.InitSummary.FromString,
                 _registered_method=True)
+        self.PollConfig = channel.unary_unary(
+                '/ubloxcontrol.UbloxControl/PollConfig',
+                request_serializer=ublox__control__pb2.PollRequest.SerializeToString,
+                response_deserializer=ublox__control__pb2.PollResponse.FromString,
+                _registered_method=True)
         self.CapturePackets = channel.unary_stream(
                 '/ubloxcontrol.UbloxControl/CapturePackets',
                 request_serializer=ublox__control__pb2.CaptureCommand.SerializeToString,
@@ -58,8 +63,16 @@ class UbloxControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PollConfig(self, request, context):
+        """Poll all messages defined in pyubx2/ubxtypes_poll.py matching a specified regex pattern
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CapturePackets(self, request, context):
         """Start a stream of GNSS metadata packets from the server to the headnode.
+        Requires that the F9t chip has previously been SET to stream the desired messages.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -72,6 +85,11 @@ def add_UbloxControlServicer_to_server(servicer, server):
                     servicer.InitF9t,
                     request_deserializer=ublox__control__pb2.F9tConfig.FromString,
                     response_serializer=ublox__control__pb2.InitSummary.SerializeToString,
+            ),
+            'PollConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.PollConfig,
+                    request_deserializer=ublox__control__pb2.PollRequest.FromString,
+                    response_serializer=ublox__control__pb2.PollResponse.SerializeToString,
             ),
             'CapturePackets': grpc.unary_stream_rpc_method_handler(
                     servicer.CapturePackets,
@@ -107,6 +125,33 @@ class UbloxControl(object):
             '/ubloxcontrol.UbloxControl/InitF9t',
             ublox__control__pb2.F9tConfig.SerializeToString,
             ublox__control__pb2.InitSummary.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PollConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ubloxcontrol.UbloxControl/PollConfig',
+            ublox__control__pb2.PollRequest.SerializeToString,
+            ublox__control__pb2.PollResponse.FromString,
             options,
             channel_credentials,
             insecure,

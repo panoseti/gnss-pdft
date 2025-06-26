@@ -2,7 +2,7 @@
   "is_valid": false,
   "chip_name": "ZED-F9T",
   "chip_uid": "",
-  "device_path": "/dev/...",
+  "device": "/dev/...",
   "timeout": 1,
   "baudrate": 38400,
   "comments": "",

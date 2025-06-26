@@ -61,33 +61,34 @@ def get_services(channel):
 def init_f9t(stub, f9t_config):
     """Initializes an F9T device according to the specification in f9t_config."""
     f9t_config_msg = F9tConfig(
-        config=ParseDict(f9t_config, Struct())
+        f9t_cfg=ParseDict(f9t_config, Struct())
     )
     init_summary = stub.InitF9t(f9t_config_msg)
     print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
     print(f'{init_summary.message=}')
     print("init_summary.f9t_state=", end='')
-    pprint(MessageToDict(init_summary.f9t_state, preserving_proto_field_name=True), expand_all=True)
+    pprint(MessageToDict(init_summary.f9t_cfg, preserving_proto_field_name=True), expand_all=True)
     for i, test_result in enumerate(init_summary.test_results):
         print(f'TEST {i}:')
         print("\t" + str(test_result).replace("\n", "\n\t"))
 
 
-def capture_packets(stub, packet_id_pattern=""):
+def capture_packets(stub, patterns=None):
     # valid_capture_command_aliases = ['start', 'stop']
 
-    def make_capture_command(pkt_id_pat):
-        re.compile(pkt_id_pat)  # verify the regex pattern compiles
-        return CaptureCommand(packet_id_pattern=pkt_id_pat)
+    def make_capture_command(pats):
+        for pat in pats:
+            re.compile(pat)  # verify each regex pattern compiles
+        return CaptureCommand(patterns=pats)
 
     packet_data_stream = stub.CapturePackets(
-        make_capture_command(packet_id_pattern)
+        make_capture_command(patterns)
     )
     for i, packet_data in zip(range(random.randint(100, 100)), packet_data_stream):
-        packet_id = packet_data.packet_id
+        name = packet_data.name
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime()
-        print(f"[ {packet_id=} ] @ {timestamp=} : ", end="")
+        print(f"[ {name=} ] @ {timestamp=} : ", end="")
         pprint(parsed_data, expand_all=False)
 
 
@@ -113,6 +114,6 @@ def run(host, port=50051):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    run(host="10.0.0.60")
-    # run(host="localhost")
+    # run(host="10.0.0.60")
+    run(host="localhost")
 

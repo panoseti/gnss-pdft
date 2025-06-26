@@ -17,7 +17,7 @@ service UbloxControl {
   rpc InitF9t(F9tConfig) returns (InitSummary) {}
 
   // Poll all messages defined in pyubx2/ubxtypes_poll.py matching a specified regex pattern
-  rpc PollConfig(PollRequest) returns (PollResponse) {}
+  rpc PollMessage(PollRequest) returns (PollResponse) {}
 
   // Start a stream of GNSS metadata packets from the server to the headnode.
   // Requires that the F9t chip has previously been SET to stream the desired messages.
@@ -106,8 +106,8 @@ message InitSummary {
   // any message regarding the initialization operation
   string message = 2;
 
-  // return the updated f9t state after initialization
-  google.protobuf.Struct f9t_state = 3;
+  // return the current active f9t config
+  google.protobuf.Struct f9t_cfg = 3;
 
   // test results
   repeated TestCase test_results = 4;

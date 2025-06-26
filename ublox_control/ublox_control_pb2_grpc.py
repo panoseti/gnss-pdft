@@ -40,8 +40,8 @@ class UbloxControlStub(object):
                 request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
                 response_deserializer=ublox__control__pb2.InitSummary.FromString,
                 _registered_method=True)
-        self.PollConfig = channel.unary_unary(
-                '/ubloxcontrol.UbloxControl/PollConfig',
+        self.PollMessage = channel.unary_unary(
+                '/ubloxcontrol.UbloxControl/PollMessage',
                 request_serializer=ublox__control__pb2.PollRequest.SerializeToString,
                 response_deserializer=ublox__control__pb2.PollResponse.FromString,
                 _registered_method=True)
@@ -63,7 +63,7 @@ class UbloxControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def PollConfig(self, request, context):
+    def PollMessage(self, request, context):
         """Poll all messages defined in pyubx2/ubxtypes_poll.py matching a specified regex pattern
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -86,8 +86,8 @@ def add_UbloxControlServicer_to_server(servicer, server):
                     request_deserializer=ublox__control__pb2.F9tConfig.FromString,
                     response_serializer=ublox__control__pb2.InitSummary.SerializeToString,
             ),
-            'PollConfig': grpc.unary_unary_rpc_method_handler(
-                    servicer.PollConfig,
+            'PollMessage': grpc.unary_unary_rpc_method_handler(
+                    servicer.PollMessage,
                     request_deserializer=ublox__control__pb2.PollRequest.FromString,
                     response_serializer=ublox__control__pb2.PollResponse.SerializeToString,
             ),
@@ -136,7 +136,7 @@ class UbloxControl(object):
             _registered_method=True)
 
     @staticmethod
-    def PollConfig(request,
+    def PollMessage(request,
             target,
             options=(),
             channel_credentials=None,
@@ -149,7 +149,7 @@ class UbloxControl(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ubloxcontrol.UbloxControl/PollConfig',
+            '/ubloxcontrol.UbloxControl/PollMessage',
             ublox__control__pb2.PollRequest.SerializeToString,
             ublox__control__pb2.PollResponse.FromString,
             options,

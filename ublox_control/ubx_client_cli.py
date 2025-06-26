@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Command Line Interface for the Server-side RPC methods.
+Command Line Interface for the client-side RPC methods.
 These commands expect the following to function correctly:
-    1. A valid network connection to the Redis database on the headnode.
-    2. R/W user permissions to the Redis UBLOX hashset.
-    3. A valid ZED-F9T u-blox chip is available as a /dev/... file.
-    4. All required Python packages are installed.
+    1. Required gRPC Python packages are installed.
+    2. A network connection to a gRPC UbloxControl server intance.
 
-See https://github.com/semuconsulting/pyubx2 for documentation on UBX interface documentation.
 """
 
 import time
@@ -17,11 +14,8 @@ import datetime
 import argparse
 
 
+from ublox_control_client import
 from ublox_control_resources import *
-
-packet_data_dir = 'data'
-
-"""Server utility functions"""
 
 
 """ Initialize u-blox device. """
@@ -29,14 +23,7 @@ def init(args):
     """Configure device and verify all desired packets are being received."""
     device = args.device
     check_device_exists(device)
-    poll_f9t_config(device)
-    set_f9t_config(device)
-    poll_f9t_config(device)
-    verified = check_f9t_dataflow(device)     # Thows an Exception if not all packet types are being received.
-    if not verified:
-        return False
     print(f"Device initialized. Ready to collect data!")
-    f9t_config["init_success"] = True
     return True
 
 

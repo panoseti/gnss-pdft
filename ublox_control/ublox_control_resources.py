@@ -4,7 +4,7 @@ Common functions for gRPC UbloxControl service.
 import os
 import json
 import logging
-from typing import List, Callable, Tuple
+from typing import List, Callable, Tuple, Any
 from contextlib import contextmanager
 
 from rich import print

@@ -15,22 +15,23 @@ import os
 from ublox_control_resources import *
 from ublox_control_pb2 import TestCase, InitSummary
 
-def run_all_init_f9t_tests(
-        test_fn_list: List[Callable[..., Tuple[bool, str]]]
-) -> Tuple[type(InitSummary.InitStatus), type(TestCase.TestResult)]:
+def run_all_tests(
+        test_fn_list: List[Callable[..., Tuple[bool, str]]],
+        args_list: List[Tuple | Tuple[Any | List[Any], Any]],
+) -> Tuple[bool, type(TestCase.TestResult)]:
     """
     Runs each test function in [test_functions].
     To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
     Returns enum init_status and a list of test_results.
     """
-
+    assert len(test_fn_list) == len(args_list), "test_fn_list must have the same length as args_list"
     def get_test_name(test_fn):
         return f"%s.%s" % (test_fn.__module__, test_fn.__name__)
 
     all_pass = True
     test_results = []
-    for test_fn in test_fn_list:
-        test_result, message = test_fn()
+    for test_fn, args in zip(test_fn_list, args_list):
+        test_result, message = test_fn(*args)
         all_pass &= test_result
         test_result = ublox_control_pb2.TestCase(
             name=get_test_name(test_fn),
@@ -38,14 +39,22 @@ def run_all_init_f9t_tests(
             message=message
         )
         test_results.append(test_result)
-    if all_pass:
-        init_status = InitSummary.InitStatus.SUCCESS
+    return all_pass, test_results
+
+def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys: List[str]):
+    """Verify the client's f9t config keys contain all required keys."""
+    required_key_set = set(required_f9t_cfg_keys)
+    client_key_set = set(client_f9t_keys)
+    if set(required_key_set).issubset(client_key_set):
+        return True, "all required f9t_cfg keys are present"
     else:
-        init_status = InitSummary.InitStatus.FAILURE
-    return init_status, test_results
+        required_key_diff = required_key_set.difference(client_key_set)
+        return False, f"the given f9t_cfg is missing the following required keys: {required_key_diff}"
+
 
 
 def is_os_posix():
+    """Verify the server is running in a POSIX environment."""
     if os.name == 'posix':
         return True, f"detected a POSIX-compliant system"
     else:

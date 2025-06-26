@@ -31,7 +31,7 @@ import ublox_control_pb2_grpc
 
 # alias messages to improve readability
 from ublox_control_resources import *
-from init_f9t_tests import run_all_init_f9t_tests, is_os_posix
+from init_f9t_tests import run_all_tests, is_os_posix, check_client_f9t_cfg_keys
 
 
 
@@ -76,10 +76,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             else:
                 self._f9t_cfg['is_init_valid'] = False
 
-        # Define test suite for the InitF9t RPC
-        self.init_f9t_tests = [
-            is_os_posix,
-        ]
 
         # Configure the server's logger
         LOG_FORMAT = (
@@ -98,6 +94,18 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
         tid = threading.get_ident()
+        # Define test suites
+        init_f9t_tests = {
+            "validate_cfg": {
+                "test_fn_list": [is_os_posix],
+                "args_list": [()]
+            },
+            "validate_init": {
+                "test_fn_list": [check_client_f9t_cfg_keys],
+                "args_list": []
+            }
+        }
+        f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'set_cfg_keys', 'comments']
         try:
             with self.lock:
                 # BEGIN check-in critical section
@@ -112,33 +120,51 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"check-in (end): {self._rw_lock_state=}")
                 # END check-in critical section
             # BEGIN critical section for F9t [write] access
+            commit_changes = True
+            test_results = []
+
             client_f9t_cfg = MessageToDict(request.f9t_cfg)
             # TODO: Validate f9t_cfg here:
             #  1. device file is valid and points to an f9t chip
             #  2. we can send SET and POLL requests to the chip and read responses with GET
             #  3. all keys under "set_cfg_keys" are valid and supported by pyubx2
+            #  4. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
+            if not set(f9t_cfg_keys_to_copy).issubset(set(client_f9t_cfg.keys())):  # TODO: make this a test fn
+                commit_changes = False
+            cfg_all_pass, cfg_test_results = run_all_tests(
+                test_fn_list=[check_client_f9t_cfg_keys],
+                args_list=[(f9t_cfg_keys_to_copy, client_f9t_cfg.keys())]
+            )
+            commit_changes = cfg_all_pass
+            test_results.extend(cfg_test_results)
 
-            # TODO: Do F9t initialization transaction
+            # TODO: Do F9t initialization
             #   Set the configuration according to client_f9t_cfg['set_cfg_keys'].
             #   NOTE: unspecified keys are returned to default values.
+            if commit_changes:
+                time.sleep(1)  # DEBUG: add delay to expose race conditions
 
-            time.sleep(1)  # DEBUG: add delay to expose race conditions
-
-            # Run tests to verify f9t initialization succeeded
-            #   If any tests fail, rollback configuration to previous config specified by self._f9t_cfg
-            init_status, test_results = run_all_init_f9t_tests(self.init_f9t_tests)
-
-            # Commit changes if all tests pass
-            f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'baudrate', 'set_cfg_keys', 'comments']
-            if init_status == ublox_control_pb2.InitSummary.InitStatus.SUCCESS:
-                message = "InitF9t transaction successful"
+                # Run tests to verify f9t initialization succeeded
+                init_all_pass, init_test_results = run_all_tests(
+                    test_fn_list=[is_os_posix],
+                    args_list=[()]
+                )
+                # Cancel transaction if any tests fail
+                commit_changes = init_all_pass
+                test_results.extend(init_test_results)
+            # Commit changes to self._f9t_cfg only if all tests pass
+            if commit_changes:
                 self._f9t_cfg['is_init_valid'] = True
                 self._f9t_cfg['is_valid'] = True
                 for key in f9t_cfg_keys_to_copy:
                     self._f9t_cfg[key] = client_f9t_cfg[key]
+                message = "InitF9t transaction successful"
+                init_status = ublox_control_pb2.InitSummary.InitStatus.SUCCESS
             else:
+                # TODO: rollback F9t configuration to previous config specified by self._f9t_cfg
                 message = "InitF9t transaction cancelled. See the test_cases field for information about failing tests"
-            # End critical section for F9t [write] access
+                init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
+            # END critical section for F9t [write] access
         finally:  # always check out
             with self.lock:
                 # BEGIN check-out critical section
@@ -177,31 +203,32 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"check-in (end): {self._rw_lock_state=}")
                 # END check-in critical section
             # BEGIN critical section for F9t [read] access
-            patterns = request.patterns
-            regex_list = [re.compile(pattern) for pattern in patterns]
-            while context.is_active():
-                # Generate next response
-                time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
-                # TODO: replace these hard-coded values with packets received from the connected u-blox chip
-                name = "TEST"
-                parsed_data = {
-                    'qErr': random.randint(-4, 4),
-                    'field2': 'hello',
-                    'field3': random.random(),
-                    'field4': None
-                }
-                timestamp = timestamp_pb2.Timestamp()
-                timestamp.GetCurrentTime()
+            if self._f9t_cfg['is_init_valid']:
+                patterns = request.patterns
+                regex_list = [re.compile(pattern) for pattern in patterns]
+                while context.is_active():
+                    # Generate next response
+                    time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
+                    # TODO: replace these hard-coded values with packets received from the connected u-blox chip
+                    name = "TEST"
+                    parsed_data = {
+                        'qErr': random.randint(-4, 4),
+                        'field2': 'hello',
+                        'field3': random.random(),
+                        'field4': None
+                    }
+                    timestamp = timestamp_pb2.Timestamp()
+                    timestamp.GetCurrentTime()
 
-                packet_data = ublox_control_pb2.PacketData(
-                    name=name,
-                    parsed_data=ParseDict(parsed_data, Struct()),
-                    timestamp=timestamp
-                )
+                    packet_data = ublox_control_pb2.PacketData(
+                        name=name,
+                        parsed_data=ParseDict(parsed_data, Struct()),
+                        timestamp=timestamp
+                    )
 
-                # send packet if its name matches any of the given patterns or if no patterns were given.
-                if len(regex_list) == 0 or any(regex.search(name) for regex in regex_list):
-                    yield packet_data
+                    # send packet if its name matches any of the given patterns or if no patterns were given.
+                    if len(regex_list) == 0 or any(regex.search(name) for regex in regex_list):
+                        yield packet_data
             # End critical section for F9t [read] access
         finally:  # always check out
             with self.lock:

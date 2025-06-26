@@ -4,7 +4,6 @@
   "chip_uid": "",
   "device": "/dev/...",
   "timeout": 1,
-  "baudrate": 38400,
   "comments": "",
   "set_cfg_key": {
     "CFG_MSGOUT_UBX_TIM_TP_USB": 1,

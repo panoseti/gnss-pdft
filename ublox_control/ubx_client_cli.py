@@ -14,7 +14,7 @@ import datetime
 import argparse
 
 
-from ublox_control_client import
+# from ublox_control_client import
 from ublox_control_resources import *
 
 

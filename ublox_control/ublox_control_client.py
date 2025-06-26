@@ -37,7 +37,6 @@ from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig
 from ublox_control_resources import *
 
 
-
 def get_services(channel):
     """Prints all available RPCs for the UbloxControl service represented by [channel]."""
     def format_rpc_service(method):
@@ -77,6 +76,8 @@ def capture_packets(stub, patterns=None):
     # valid_capture_command_aliases = ['start', 'stop']
 
     def make_capture_command(pats):
+        if pats is None:
+            return CaptureCommand()
         for pat in pats:
             re.compile(pat)  # verify each regex pattern compiles
         return CaptureCommand(patterns=pats)
@@ -104,7 +105,7 @@ def run(host, port=50051):
         print("-------------- ServerReflection --------------")
         get_services(channel)
 
-        while True:
+        for i in range(1):
             print("-------------- InitF9t --------------")
             init_f9t(stub, default_f9t_config)
 

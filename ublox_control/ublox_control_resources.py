@@ -37,17 +37,6 @@ default_f9t_cfg_file = "default_f9t_config.json"
 with open(cfg_dir/default_f9t_cfg_file) as f:
     default_f9t_cfg = json.load(f)
 
-""" Synchronization helper functions """
-
-@contextmanager
-def acquire_timeout(lock, condvar, timeout):
-    """https://stackoverflow.com/questions/16740104/python-lock-with-statement-and-timeout"""
-    result = lock.acquire(timeout=timeout)
-    try:
-        yield result
-    finally:
-        if result:
-            lock.release()
 
 def make_rich_logger(name):
     LOG_FORMAT = (

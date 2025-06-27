@@ -49,7 +49,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         # Initialize mesa monitor for synchronizing access to the F9T chip
         #   "Writers" = threads executing the InitF9t RPC.
         #   "Readers" = threads executing any other UbloxControl RPC that depends on F9t data
-        self.__rw_lock_state = {
+        self.__f9t_rw_lock_state = {
             "wr": 0,  # waiting readers
             "ww": 0,  # waiting writers
             "ar": 0,  # active readers
@@ -73,90 +73,67 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             else:
                 self.__server_cfg['is_init_valid'] = False
 
-        # Configure the server's logger
-        # LOG_FORMAT = (
-        #     "[tid=%(thread)d] [%(funcName)s()] %(message)s "
-        #     # "[%(filename)s:%(lineno)d %(funcName)s()]"
-        # )
-        #
-        # logging.basicConfig(
-        #     level=logging.INFO,
-        #     format=LOG_FORMAT,
-        #     datefmt="%Y-%m-%d %H:%M:%S",
-        #     handlers=[RichHandler(rich_tracebacks=True)]
-        # )
-        self.logger = make_rich_logger(__name__)#logging.getLogger(__name__)
-        print(self.logger)
+        # Create the server's logger
+        self.logger = make_rich_logger(__name__)
 
     @contextmanager
     def __f9t_lock_writer(self):
         with self.__f9t_lock:
             # BEGIN check-in critical section
             # Wait until no active readers or active writers
-            self.logger.debug(f"(writer) check-in (start): {self.__rw_lock_state=}")
-            self.__rw_lock_state['ww'] += 1
-            while (self.__rw_lock_state['aw'] + self.__rw_lock_state['ar']) > 0:
+            self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
+            self.__f9t_rw_lock_state['ww'] += 1
+            while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
                 self.__write_ok.wait()
-            self.__rw_lock_state['ww'] -= 1
-            self.__rw_lock_state['aw'] += 1
-            self.logger.debug(f"(writer) check-in (end): {self.__rw_lock_state=}")
+            self.__f9t_rw_lock_state['ww'] -= 1
+            self.__f9t_rw_lock_state['aw'] += 1
+            self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
         # END check-in critical section
         yield None
         with self.__f9t_lock:
             # BEGIN check-out critical section
-            self.logger.debug(f"(writer) check-out (start): {self.__rw_lock_state=}")
-            self.__rw_lock_state['aw'] = max(0, self.__rw_lock_state['aw'] - 1)  # no longer active
-            if self.__rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
+            self.logger.debug(f"(writer) check-out (start):\t{self.__f9t_rw_lock_state=}")
+            self.__f9t_rw_lock_state['aw'] = max(0, self.__f9t_rw_lock_state['aw'] - 1)  # no longer active
+            if self.__f9t_rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
                 self.__write_ok.notify()
-            elif self.__rw_lock_state['wr'] > 0:
+            elif self.__f9t_rw_lock_state['wr'] > 0:
                 self.__read_ok.notify_all()
-            self.logger.debug(f"(writer) check-out (end): {self.__rw_lock_state=}")
+            self.logger.debug(f"(writer) check-out (end):\t{self.__f9t_rw_lock_state=}")
 
     @contextmanager
     def __f9t_lock_reader(self):
         with self.__f9t_lock:
             # BEGIN check-in critical section
             # Wait until no active writers
-            self.__rw_lock_state['wr'] += 1
-            self.logger.debug(f"(reader) check-in (start): {self.__rw_lock_state=}")
-            while (self.__rw_lock_state['aw'] + self.__rw_lock_state['ww']) > 0:  # safe to read?
+            self.__f9t_rw_lock_state['wr'] += 1
+            self.logger.debug(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
+            while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
                 self.__read_ok.wait()
-            self.__rw_lock_state['wr'] -= 1
-            self.__rw_lock_state['ar'] += 1
-            self.logger.debug(f"(reader) check-in (end): {self.__rw_lock_state=}")
+            self.__f9t_rw_lock_state['wr'] -= 1
+            self.__f9t_rw_lock_state['ar'] += 1
+            self.logger.debug(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
             # END check-in critical section
         yield None
         with self.__f9t_lock:
             # BEGIN check-out critical section
-            self.logger.debug(f"(reader) check-out (start): {self.__rw_lock_state=}")
-            self.__rw_lock_state['ar'] = max(0, self.__rw_lock_state['ar'] - 1)  # no longer active
+            self.logger.debug(f"(reader) check-out (start):\t{self.__f9t_rw_lock_state=}")
+            self.__f9t_rw_lock_state['ar'] = max(0, self.__f9t_rw_lock_state['ar'] - 1)  # no longer active
             # Give lock priority to waiting writers
-            if self.__rw_lock_state['ar'] == 0 and self.__rw_lock_state['ww'] > 0:
+            if self.__f9t_rw_lock_state['ar'] == 0 and self.__f9t_rw_lock_state['ww'] > 0:
                 self.__write_ok.notify()
-            elif self.__rw_lock_state['wr'] > 0:
+            elif self.__f9t_rw_lock_state['wr'] > 0:
                 self.__read_ok.notify_all()
-            self.logger.debug(f"(reader) check-out (end): {self.__rw_lock_state=}")
+            self.logger.debug(f"(reader) check-out (end):\t{self.__f9t_rw_lock_state=}")
             # END check-out critical section
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
         f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'cfg_key_settings', 'comments']
-        try:
-            with self.__f9t_lock:
-                # BEGIN check-in critical section
-                # Wait until no active readers or active writers
-                self.__rw_lock_state['ww'] += 1
-                self.logger.debug(f"check-in (start): {self.__rw_lock_state=}")
-                while (self.__rw_lock_state['aw'] > 0) or (self.__rw_lock_state['ar'] > 0):
-                    # This RPC is a "writer"
-                    self.__write_ok.wait()
-                self.__rw_lock_state['ww'] -= 1
-                self.__rw_lock_state['aw'] += 1
-                self.logger.debug(f"check-in (end): {self.__rw_lock_state=}")
-                # END check-in critical section
+        with self.__f9t_lock_writer():
             # BEGIN critical section for F9t [write] access
             commit_changes = True
             test_results = []
+            time.sleep(1)  # DEBUG: add delay to expose race conditions
 
             client_f9t_cfg = MessageToDict(request.f9t_cfg)
             # TODO: Validate f9t_cfg here:
@@ -185,7 +162,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             #   Set the configuration according to client_f9t_cfg['set_cfg_keys'].
             #   NOTE: unspecified keys are returned to default values.
             if commit_changes:
-                time.sleep(1)  # DEBUG: add delay to expose race conditions
 
                 # Run tests to verify f9t initialization succeeded
                 init_all_pass, init_test_results = run_all_tests(
@@ -212,17 +188,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 message = "InitF9t transaction cancelled. See the test_cases field for information about failing tests"
                 init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
             # END critical section for F9t [write] access
-        finally:  # always check out
-            with self.__f9t_lock:
-                # BEGIN check-out critical section
-                self.logger.debug(f"check-out (start): {self.__rw_lock_state=}")
-                if self.__rw_lock_state['ww'] > 0: # Give lock priority to waiting writers
-                    self.__write_ok.notify()
-                elif self.__rw_lock_state['wr'] > 0:
-                    self.__read_ok.notify_all()
-                self.__rw_lock_state['aw'] = max(0, self.__rw_lock_state['aw'] - 1)
-                self.logger.debug(f"check-out (end): {self.__rw_lock_state=}")
-                # END check-out critical section
 
         # Send summary of initialization process to client
         init_summary = ublox_control_pb2.InitSummary(
@@ -235,23 +200,14 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def CapturePackets(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
-        try:
-            with self.__f9t_lock:
-                # BEGIN check-in critical section
-                # Wait until no active writers
-                self.__rw_lock_state['wr'] += 1
-                self.logger.debug(f"check-in (start): {self.__rw_lock_state=}")
-                while self.__rw_lock_state['aw'] > 0 or self.__rw_lock_state['ww'] > 0:
-                    # This RPC is a "reader"
-                    self.__read_ok.wait()
-                self.__rw_lock_state['wr'] -= 1
-                self.__rw_lock_state['ar'] += 1
-                self.logger.debug(f"check-in (end): {self.__rw_lock_state=}")
-                # END check-in critical section
+        patterns = request.patterns
+        regex_list = [re.compile(pattern) for pattern in patterns]
+        # TODO: check if the patterns are valid
+        with self.__f9t_lock_reader():
+            time.sleep(1)
             # BEGIN critical section for F9t [read] access
             if self.__server_cfg['is_init_valid']:
-                patterns = request.patterns
-                regex_list = [re.compile(pattern) for pattern in patterns]
+                self.logger.info("Streaming messages matching ")
                 while context.is_active():
                     # Generate next response
                     time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
@@ -284,20 +240,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     timestamp=timestamp
                 )
                 yield packet_data
-
             # End critical section for F9t [read] access
-        finally:  # always check out
-            with self.__f9t_lock:
-                # BEGIN check-out critical section
-                self.logger.debug(f"check-out (start): {self.__rw_lock_state=}")
-                if self.__rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
-                    self.__write_ok.notify()
-                elif self.__rw_lock_state['wr'] > 0:
-                    self.__read_ok.notify_all()
-                self.__rw_lock_state['ar'] = max(0, self.__rw_lock_state['ar'] - 1)
-                self.logger.debug(f"check-out (end): {self.__rw_lock_state=}")
-                # END check-out critical section
-
 
 def serve():
     """Create the gRPC server threadpool and start providing the UbloxControl service."""

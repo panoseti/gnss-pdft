@@ -105,7 +105,8 @@ def run(host, port=50051):
         print("-------------- ServerReflection --------------")
         get_services(channel)
 
-        for i in range(1):
+        #for i in range(1):
+        while True:
             print("-------------- InitF9t --------------")
             init_f9t(stub, default_f9t_cfg)
 

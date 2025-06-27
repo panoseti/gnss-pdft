@@ -49,6 +49,20 @@ def acquire_timeout(lock, condvar, timeout):
         if result:
             lock.release()
 
+def make_rich_logger(name):
+    LOG_FORMAT = (
+        "[tid=%(thread)d] [%(funcName)s()] %(message)s "
+        # "[%(filename)s:%(lineno)d %(funcName)s()]"
+    )
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format=LOG_FORMAT,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[RichHandler(rich_tracebacks=True)]
+    )
+    return logging.getLogger(name)
+
 
 """ Redis utility functions """
 def get_f9t_redis_key(chip_name, chip_uid, prot_msg):
@@ -71,53 +85,121 @@ def get_f9t_redis_key(chip_name, chip_uid, prot_msg):
 
 """ Testing utils """
 
+def run_all_tests(
+        test_fn_list: List[Callable[..., Tuple[bool, str]]],
+        args_list: List[List[...]],
+) -> Tuple[bool, type(ublox_control_pb2.TestCase.TestResult)]:
+    """
+    Runs each test function in [test_functions].
+    To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
+    Returns enum init_status and a list of test_results.
+    """
+    assert len(test_fn_list) == len(args_list), "test_fn_list must have the same length as args_list"
+    def get_test_name(test_fn):
+        return f"%s.%s" % (test_fn.__module__, test_fn.__name__)
+
+    all_pass = True
+    test_results = []
+    for test_fn, args in zip(test_fn_list, args_list):
+        test_result, message = test_fn(*args)
+        all_pass &= test_result
+        test_result = ublox_control_pb2.TestCase(
+            name=get_test_name(test_fn),
+            result=TestCase.TestResult.PASS if test_result else TestCase.TestResult.FAIL,
+            message=message
+        )
+        test_results.append(test_result)
+    return all_pass, test_results
 
 
-def get_experiment_dir(start_timestamp, device):
-    device_name = device.split('/')[-1]
-    return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
+def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
+    """
+    Test Redis connection with specified connection parameters.
+        1. Connect to Redis.
+        2. Perform a series of pipelined write operations to a test hashset.
+        3. Verify whether these writes were successful.
+    Returns number of failed operations. (0 = test passed, 1+ = test failed.)
+    """
+    failures = 0
+
+    try:
+        print(f"Connecting to {host}:{port}")
+        r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
+        if not r.ping():
+            raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+
+        timestamp = datetime.datetime.now().isoformat()
+        # Create a redis pipeline to efficiently send key updates.
+        pipe = r.pipeline()
+
+        # Queue updates to a test hash: write current timestamp to 10 test keys
+        for i in range(20):
+            field = f't{i}'
+            value = datetime.datetime.now().isoformat()
+            pipe.hset('TEST', field, value)
+
+        # Execute the pipeline and get results
+        results = pipe.execute(raise_on_error=False)
+
+        # Check if each operation succeeded
+        success = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                success.append('0')
+                failures += 1
+                print(f"Command {i} failed: {result=}")
+            else:
+                success.append('1')
+        print(f'[{timestamp}]: success = [{" ".join(success)}]')
+
+    except Exception:
+        # Fail safely by reporting a failure in case of any exceptions
+        return 1
+    return failures
+
+
+# def get_experiment_dir(start_timestamp, device):
+#     device_name = device.split('/')[-1]
+#     return f'{packet_data_dir}/start_{start_timestamp}.device_{device_name}'
 
 """ ----- F9T I/O functions ---- """
 
-def get_f9t_device(f9t_config):
-    return f9t_config['device']
-
-def get_f9t_unique_id(device):
-    """
-    Poll the unique ID of the f9t chip.
-    We need to write a custom poll command because the pyubx2 library doesn't implement this cfg message.
-    """
-    # UBX-SEC-UNIQID poll message (class 0x27, id 0x03)
-    UBX_UNIQID_POLL = bytes([0xB5, 0x62, 0x27, 0x03, 0x00, 0x00, 0x2A, 0x8F])
-    with Serial(device, F9T_BAUDRATE, timeout=2) as stream:
-        ubr = UBXReader(stream)
-        # Flush any existing input
-        stream.reset_input_buffer()
-        print("Sending UBX-SEC-UNIQID poll...")
-        stream.write(UBX_UNIQID_POLL)
-        stream.flush()
-        # Wait for and parse the response
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > 5:
-                print("Timeout waiting for response.")
-                break
-            raw_data, parsed_data = ubr.read()
-            if parsed_data and parsed_data.identity == 'SEC-UNIQID':
-                # The unique ID is in parsed_data.uniqueId (should be bytes)
-                unique_id = parsed_data.uniqueId.hex()
-                print(f"Unique ID: {unique_id}")
-                return unique_id
-            # # Look for UBX-SEC-UNIQID response (class 0x27, id 0x03)
-            # if raw_data and raw_data[2] == 0x27 and raw_data[3] == 0x03:
-            #     # Payload is at raw_data[6:-2], uniqueId is bytes 4:36 of payload
-            #     payload = raw_data[6:-2]
-            #     if len(payload) >= 36:
-            #         unique_id = payload[4:36].hex()
-            #         print(f"ZED-F9T Unique ID: {unique_id}")
-            #     else:
-            #         print("Received payload too short.")
-            #     break
+# def get_f9t_unique_id(device):
+#     """
+#     Poll the unique ID of the f9t chip.
+#     We need to write a custom poll command because the pyubx2 library doesn't implement this cfg message.
+#     """
+#     # UBX-SEC-UNIQID poll message (class 0x27, id 0x03)
+#     UBX_UNIQID_POLL = bytes([0xB5, 0x62, 0x27, 0x03, 0x00, 0x00, 0x2A, 0x8F])
+#     with Serial(device, F9T_BAUDRATE, timeout=2) as stream:
+#         ubr = UBXReader(stream)
+#         # Flush any existing input
+#         stream.reset_input_buffer()
+#         print("Sending UBX-SEC-UNIQID poll...")
+#         stream.write(UBX_UNIQID_POLL)
+#         stream.flush()
+#         # Wait for and parse the response
+#         start_time = time.time()
+#         while True:
+#             if time.time() - start_time > 5:
+#                 print("Timeout waiting for response.")
+#                 break
+#             raw_data, parsed_data = ubr.read()
+#             if parsed_data and parsed_data.identity == 'SEC-UNIQID':
+#                 # The unique ID is in parsed_data.uniqueId (should be bytes)
+#                 unique_id = parsed_data.uniqueId.hex()
+#                 print(f"Unique ID: {unique_id}")
+#                 return unique_id
+#             # # Look for UBX-SEC-UNIQID response (class 0x27, id 0x03)
+#             # if raw_data and raw_data[2] == 0x27 and raw_data[3] == 0x03:
+#             #     # Payload is at raw_data[6:-2], uniqueId is bytes 4:36 of payload
+#             #     payload = raw_data[6:-2]
+#             #     if len(payload) >= 36:
+#             #         unique_id = payload[4:36].hex()
+#             #         print(f"ZED-F9T Unique ID: {unique_id}")
+#             #     else:
+#             #         print("Received payload too short.")
+#             #     break
 
 def poll_f9t_config(device, cfg=default_f9t_cfg):
     """
@@ -157,24 +239,3 @@ def set_f9t_config(device, cfg=default_f9t_cfg):
             raw_data, parsed_data = ubr.read()
             if parsed_data is not None:
                 print('\t', parsed_data)
-
-# def read_route_guide_database():
-#     """Reads the route guide database.
-#
-#     Returns:
-#       The full contents of the route guide database as a sequence of
-#         route_guide_pb2.Features.
-#     """
-#     feature_list = []
-#     with open("route_guide_db.json") as route_guide_db_file:
-#         for item in json.load(route_guide_db_file):
-#             feature = ublox_control_pb2.Feature(
-#                 name=item["name"],
-#                 location=ublox_control_pb2.Point(
-#                     latitude=item["location"]["latitude"],
-#                     longitude=item["location"]["longitude"],
-#                 ),
-#             )
-#             feature_list.append(feature)
-#     return feature_list
-

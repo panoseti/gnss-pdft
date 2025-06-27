@@ -115,6 +115,6 @@ def run(host, port=50051):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    # run(host="10.0.0.60")
+    #run(host="10.0.0.60")
     run(host="localhost")
 

@@ -2,14 +2,13 @@
 Test cases for the InitF9t RPC.
 
 These functions verify a specified F9t is properly configured.
-Each function must have type Callable[..., [bool, str]] as the examples below:
-    def test_0():
-        msg = "your debug or error message for test_0 here"
-        return True, msg
+Each function must have type Callable[..., Tuple[bool, str]] as the example below:
 
-    def test_1():
-        msg = "your debug or error message test_1 here"
-        return False, msg
+    def is_even(n: int) -> Tuple[bool, str]:
+        if n % 2 == 0:
+            return True, f"{n} is even"
+        else:
+            return False, f"{n} is odd"
 """
 import os
 from threading import Thread, Event
@@ -17,31 +16,6 @@ from ublox_control_resources import *
 from ublox_control_pb2 import TestCase, InitSummary
 from pyubx2.ubxhelpers import cfgkey2name
 
-def run_all_tests(
-        test_fn_list: List[Callable[..., Tuple[bool, str]]],
-        args_list: List[List[...]],
-) -> Tuple[bool, type(TestCase.TestResult)]:
-    """
-    Runs each test function in [test_functions].
-    To ensure correct behavior new test functions have type Callable[..., Tuple[bool, str]] to ensure correct behavior.
-    Returns enum init_status and a list of test_results.
-    """
-    assert len(test_fn_list) == len(args_list), "test_fn_list must have the same length as args_list"
-    def get_test_name(test_fn):
-        return f"%s.%s" % (test_fn.__module__, test_fn.__name__)
-
-    all_pass = True
-    test_results = []
-    for test_fn, args in zip(test_fn_list, args_list):
-        test_result, message = test_fn(*args)
-        all_pass &= test_result
-        test_result = ublox_control_pb2.TestCase(
-            name=get_test_name(test_fn),
-            result=TestCase.TestResult.PASS if test_result else TestCase.TestResult.FAIL,
-            message=message
-        )
-        test_results.append(test_result)
-    return all_pass, test_results
 
 def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys: List[str]) -> Tuple[bool, str]:
     """Verify the client's f9t config keys contain all required keys."""
@@ -109,47 +83,3 @@ def check_f9t_dataflow(f9t_cfg):
 
 
 
-def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
-    """
-    Test Redis connection with specified connection parameters.
-        1. Connect to Redis.
-        2. Perform a series of pipelined write operations to a test hashset.
-        3. Verify whether these writes were successful.
-    Returns number of failed operations. (0 = test passed, 1+ = test failed.)
-    """
-    failures = 0
-
-    try:
-        print(f"Connecting to {host}:{port}")
-        r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
-        if not r.ping():
-            raise FileNotFoundError(f'Cannot connect to {host}:{port}')
-
-        timestamp = datetime.datetime.now().isoformat()
-        # Create a redis pipeline to efficiently send key updates.
-        pipe = r.pipeline()
-
-        # Queue updates to a test hash: write current timestamp to 10 test keys
-        for i in range(20):
-            field = f't{i}'
-            value = datetime.datetime.now().isoformat()
-            pipe.hset('TEST', field, value)
-
-        # Execute the pipeline and get results
-        results = pipe.execute(raise_on_error=False)
-
-        # Check if each operation succeeded
-        success = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                success.append('0')
-                failures += 1
-                print(f"Command {i} failed: {result=}")
-            else:
-                success.append('1')
-        print(f'[{timestamp}]: success = [{" ".join(success)}]')
-
-    except Exception:
-        # Fail safely by reporting a failure in case of any exceptions
-        return 1
-    return failures

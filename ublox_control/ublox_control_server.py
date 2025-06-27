@@ -12,8 +12,6 @@ from concurrent import futures
 import threading
 import time
 import re
-import json
-from pathlib import Path
 
 import grpc
 
@@ -40,7 +38,7 @@ from init_f9t_tests import *#run_all_tests, is_os_posix, check_client_f9t_cfg_ke
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
-    def __init__(self, cfg_dir=Path("config"), server_cfg_file="ublox_control_server_config.json"):
+    def __init__(self, server_cfg_file="ublox_control_server_config.json"):
         # verify the server is running on a POSIX-compliant system
         test_result, msg = is_os_posix()
         assert test_result, msg
@@ -91,7 +89,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
-        f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'set_cfg_keys', 'comments']
+        f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'cfg_key_settings', 'comments']
         try:
             with self.lock:
                 # BEGIN check-in critical section
@@ -111,6 +109,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
             client_f9t_cfg = MessageToDict(request.f9t_cfg)
             # TODO: Validate f9t_cfg here:
+            #  0. System is POSIX
             #  1. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
             #  2. device file is valid
             #  3. device file points to an f9t chip
@@ -118,10 +117,12 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             #  5. all keys under "set_cfg_keys" are valid and supported by pyubx2
             cfg_all_pass, cfg_test_results = run_all_tests(
                 test_fn_list=[
+                    is_os_posix,
                     check_client_f9t_cfg_keys,
                     is_device_valid,
                 ],
                 args_list=[
+                    [],
                     [f9t_cfg_keys_to_copy, client_f9t_cfg.keys()],
                     [client_f9t_cfg['device']]
                 ]
@@ -137,8 +138,12 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
                 # Run tests to verify f9t initialization succeeded
                 init_all_pass, init_test_results = run_all_tests(
-                    test_fn_list=[is_os_posix],
-                    args_list=[[]]
+                    test_fn_list=[
+                        check_f9t_dataflow
+                    ],
+                    args_list=[
+                        [client_f9t_cfg]
+                    ]
                 )
                 # Cancel transaction if any tests fail
                 commit_changes = init_all_pass
@@ -219,6 +224,16 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     # send packet if its name matches any of the given patterns or if no patterns were given.
                     if len(regex_list) == 0 or any(regex.search(name) for regex in regex_list):
                         yield packet_data
+            else:
+                timestamp = timestamp_pb2.Timestamp()
+                timestamp.GetCurrentTime()
+                packet_data = ublox_control_pb2.PacketData(
+                    name="INVALID_F9T_INITIALIZATION: Run InitF9t to configure the F9t with a valid config",
+                    # parsed_data=ParseDict(parsed_data, Struct()),
+                    timestamp=timestamp
+                )
+                yield packet_data
+
             # End critical section for F9t [read] access
         finally:  # always check out
             with self.lock:

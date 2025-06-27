@@ -6,6 +6,7 @@ import json
 import logging
 from typing import List, Callable, Tuple, Any
 from contextlib import contextmanager
+from pathlib import Path
 
 from rich import print
 from rich.logging import RichHandler
@@ -25,22 +26,16 @@ from ublox_control_pb2 import TestCase, InitSummary, CaptureCommand
 
 
 """ Config globals"""
-ublox_control_config_file = 'ublox_control_config.json'
 F9T_BAUDRATE = 38400
 
+cfg_dir = Path('config')
+ublox_control_config_file = 'ublox_control_config.json'
 # Configuration for metadata capture from the u-blox ZED-F9T timing chip
 # TODO: make this a separate config file and track with version control etc.
-default_f9t_config = {
-    "chip_name": "ZED-F9T",
-    "device": None, # /dev file connection
-    "protocol": {
-        "ubx": {
-            "cfg_keys": ["CFG_MSGOUT_UBX_TIM_TP_USB", "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB"], # default cfg keys to poll
-            "packet_ids": ['NAV-TIMEUTC', 'TIM-TP'], # packet_ids to capture: should be in 1-1 corresp with the cfg_keys.
-        }
-    },
-    "timeout (s)": 7,
-}
+default_f9t_cfg_file = "default_f9t_config.json"
+
+with open(cfg_dir/default_f9t_cfg_file) as f:
+    default_f9t_cfg = json.load(f)
 
 """ Synchronization helper functions """
 
@@ -124,7 +119,7 @@ def get_f9t_unique_id(device):
             #         print("Received payload too short.")
             #     break
 
-def poll_f9t_config(device, cfg=default_f9t_config):
+def poll_f9t_config(device, cfg=default_f9t_cfg):
     """
     Poll the current configuration settings for each cfg_key specified in the cfg dict.
     On startup, should be 0 by default.
@@ -143,7 +138,7 @@ def poll_f9t_config(device, cfg=default_f9t_config):
             print('\t', parsed_data)
 
 
-def set_f9t_config(device, cfg=default_f9t_config):
+def set_f9t_config(device, cfg=default_f9t_cfg):
     """Tell chip to start sending metadata packets for each cfg_key"""
     layer = SET_LAYER_RAM
     transaction = TXN_NONE

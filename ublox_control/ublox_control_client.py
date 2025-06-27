@@ -107,7 +107,7 @@ def run(host, port=50051):
 
         for i in range(1):
             print("-------------- InitF9t --------------")
-            init_f9t(stub, default_f9t_config)
+            init_f9t(stub, default_f9t_cfg)
 
             print("-------------- CapturePackets --------------")
             capture_packets(stub)

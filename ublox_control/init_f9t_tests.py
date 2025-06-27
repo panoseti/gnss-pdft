@@ -12,8 +12,10 @@ Each function must have type Callable[..., [bool, str]] as the examples below:
         return False, msg
 """
 import os
+from threading import Thread, Event
 from ublox_control_resources import *
 from ublox_control_pb2 import TestCase, InitSummary
+from pyubx2.ubxhelpers import cfgkey2name
 
 def run_all_tests(
         test_fn_list: List[Callable[..., Tuple[bool, str]]],
@@ -58,7 +60,7 @@ def is_device_valid(device: str) -> Tuple[bool, str]:
     elif os.path.exists(device):
         return True, f"{device} is valid"
     else:
-        return False, f"{device} does not exist"
+        return False, f"'{device}' does not exist"
 
 
 def is_os_posix():
@@ -68,36 +70,31 @@ def is_os_posix():
     else:
         return False, f"{os.name} is not supported yet"
 
-def check_device_exists(device):
-    msg = ""
-    if device is not None:
-        if not os.path.exists(device):
-            raise FileNotFoundError(f'Cannot access {device}')
-            msg = f'Cannot access {device}'
-        return True, msg
-    return False, msg
 
-
-def check_f9t_dataflow(device, cfg):
+def check_f9t_dataflow(f9t_cfg):
     """
     Verify all packets specified in the 'packet_ids' fields of cfg are being received.
     NOTE: for now this is hardcoded for UBX packets.
     @return: True if all packets have been received, False otherwise.
     """
-    timeout = cfg['timeout (s)']
-    ubx_cfg = cfg['protocol']['ubx']
+    device = f9t_cfg['device']
+    timeout = f9t_cfg['timeout']
+    # ubx_cfg = cfg['protocol']['ubx']
+    packet_ids = [cfgkey2name(cfg_key) for cfg_key in f9t_cfg['cfg_key_settings'].keys()]
+    print(packet_ids)
 
     # Initialize dict for recording whether we're receiving packets of each type.
-    pkt_id_flags = {pkt_id: False for pkt_id in ubx_cfg['packet_ids']}
+    pkt_id_flags = {pkt_id: False for pkt_id in packet_ids}
 
     msg = ""
     try:
+
         with Serial(device, F9T_BAUDRATE, timeout=timeout) as stream:
             ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
             print('Verifying packets are being received... (If stuck at this step, re-run with the "init" option.)')
 
             for i in range(timeout):  # assumes config packets are send every second -> waits for timeout seconds.
-                raw_data, parsed_data = ubr.read() # blocking read operation -> waits for next UBX_PROTOCOL packet.
+                raw_data, parsed_data = ubr.read()  # blocking read operation -> waits for next UBX_PROTOCOL packet.
                 if parsed_data:
                     for pkt_id in pkt_id_flags.keys():
                         if parsed_data.identity == pkt_id:

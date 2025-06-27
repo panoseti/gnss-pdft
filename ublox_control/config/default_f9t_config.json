@@ -5,7 +5,7 @@
   "device": "/dev/...",
   "timeout": 1,
   "comments": "",
-  "set_cfg_key": {
+  "cfg_key_settings": {
     "CFG_MSGOUT_UBX_TIM_TP_USB": 1,
     "CFG_MSGOUT_UBX_NAV_TIMEUTC_USB": 1
   }

@@ -209,7 +209,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         self.logger.info("Successfully freed resources")
 
     @contextmanager
-    def __f9t_lock_writer(self):
+    def __f9t_lock_writer(self, context):
         try:
             with self.__f9t_lock:
                 # BEGIN check-in critical section
@@ -217,6 +217,9 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
                 self.__f9t_rw_lock_state['ww'] += 1
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
+                    if not context.is_active():
+                        self.__f9t_rw_lock_state['ww'] -= 1
+                        raise grpc.FutureCancelledError("context terminated during writer lock acquisition")
                     self.__write_ok.wait(timeout=10)
                 self.__f9t_rw_lock_state['ww'] -= 1
                 self.__f9t_rw_lock_state['aw'] += 1
@@ -236,7 +239,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 # END check-out critical section
 
     @contextmanager
-    def __f9t_lock_reader(self):
+    def __f9t_lock_reader(self, context):
         read_fmap_idx = -1  # remember which read_queue freemap entry corresponds to this thread
         try:
             with self.__f9t_lock:
@@ -245,7 +248,11 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.__f9t_rw_lock_state['wr'] += 1
                 self.logger.info(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
+                    if not context.is_active():
+                        self.__f9t_rw_lock_state['wr'] -= 1
+                        raise grpc.FutureCancelledError("reader context terminated during reader lock acquisition")
                     self.__read_ok.wait()
+
                 self.__f9t_rw_lock_state['wr'] -= 1
                 self.__f9t_rw_lock_state['ar'] += 1
 
@@ -309,7 +316,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         if commit_changes:
 
             # Only enter critical section as a writer if the client's F9t configuration is valid
-            with self.__f9t_lock_writer():
+            with self.__f9t_lock_writer(context):
                 time.sleep(0.5)  # DEBUG: add delay to expose race conditions
                 # BEGIN critical section for F9tInit [write] access
                 # Terminate any previous F9t_io thread
@@ -381,7 +388,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         patterns = request.patterns
         regex_list = [re.compile(pattern) for pattern in patterns]
         # TODO: check if the patterns are valid
-        with self.__f9t_lock_reader() as rid:  # rid = allocated reader id
+        with self.__f9t_lock_reader(context) as rid:  # rid = allocated reader id
             # Clear the read_queue of old data
             #time.sleep(0.)
             rq = self.__read_queues[rid]

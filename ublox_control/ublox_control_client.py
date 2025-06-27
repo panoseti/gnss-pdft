@@ -122,6 +122,6 @@ if __name__ == "__main__":
     # logging.basicConfig()
     logger = make_rich_logger(__name__)
     test_redis_connection("localhost", logger=logger)
-    run(host="10.0.0.60")
+    # run(host="10.0.0.60")
     run(host="localhost")
 

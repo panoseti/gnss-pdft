@@ -16,6 +16,8 @@ from ublox_control_resources import *
 from ublox_control_pb2 import TestCase, InitSummary
 from pyubx2.ubxhelpers import cfgkey2name
 
+from pyubx2 import POLL, UBX_PAYLOADS_POLL
+
 
 def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys: List[str]) -> Tuple[bool, str]:
     """Verify the client's f9t config keys contain all required keys."""
@@ -43,6 +45,17 @@ def is_os_posix():
         return True, f"detected a POSIX-compliant system"
     else:
         return False, f"{os.name} is not supported yet"
+
+def poll_nav_messages(send_queue) -> Tuple[bool, str]:
+    count = 0
+    test_msg = ""
+    for nam in UBX_PAYLOADS_POLL:
+        if nam[0:4] == "NAV-":
+            test_msg += f"Polling {nam} message type..."
+            msg = UBXMessage("NAV", nam, POLL)
+            send_queue.put(msg)
+            count += 1
+    return True, f"sent {count} messages: " + test_msg
 
 
 def check_f9t_dataflow(f9t_cfg):

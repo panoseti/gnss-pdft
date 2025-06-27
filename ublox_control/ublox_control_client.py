@@ -87,7 +87,7 @@ def capture_packets(stub, patterns=None):
     packet_data_stream = stub.CapturePackets(
         make_capture_command(patterns)
     )
-    for i, packet_data in zip(range(random.randint(100, 100)), packet_data_stream):
+    for i, packet_data in zip(range(random.randint(10, 20)), packet_data_stream):
         name = packet_data.name
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime().isoformat()

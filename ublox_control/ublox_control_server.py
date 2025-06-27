@@ -338,9 +338,11 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 init_all_pass, init_test_results = run_all_tests(
                     test_fn_list=[
                         # check_f9t_dataflow # TODO: implement this
+                        poll_nav_messages,
                     ],
                     args_list=[
-                        # [client_f9t_cfg]
+                        # [client_f9t_cfg],
+                        [self.__send_queue]
                     ]
                 )
                 commit_changes = init_all_pass

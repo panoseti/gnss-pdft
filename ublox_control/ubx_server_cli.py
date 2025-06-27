@@ -58,7 +58,7 @@ def test_redis_cli_connection(args):
           '\n\tStart timestamp: {}\n'.format(start_timestamp))
     failures = 1
     try:
-        failures = test_redis_daq_to_headnode_connection(host, port, socket_timeout)
+        failures = test_redis_connection(host, port, socket_timeout)
     except KeyboardInterrupt:
         print(f'\nStopping test. {failures=}')
         return False

@@ -7,6 +7,7 @@ import logging
 from typing import List, Callable, Tuple, Any
 from contextlib import contextmanager
 from pathlib import Path
+import redis
 
 from rich import print
 from rich.logging import RichHandler
@@ -101,7 +102,7 @@ def run_all_tests(
     return all_pass, test_results
 
 
-def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
+def test_redis_connection(host, port=6379, socket_timeout=1, logger=None) -> Tuple[bool, str]:
     """
     Test Redis connection with specified connection parameters.
         1. Connect to Redis.
@@ -112,10 +113,12 @@ def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
     failures = 0
 
     try:
-        print(f"Connecting to {host}:{port}")
+        # print(f"Connecting to {host}:{port}")
+        if logger: logger.debug(f"Connecting to {host}:{port}")
         r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
         if not r.ping():
-            raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+            # raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+            return False, f'Cannot connect to {host}:{port}'
 
         timestamp = datetime.datetime.now().isoformat()
         # Create a redis pipeline to efficiently send key updates.
@@ -137,14 +140,17 @@ def test_redis_daq_to_headnode_connection(host, port, socket_timeout):
                 success.append('0')
                 failures += 1
                 print(f"Command {i} failed: {result=}")
+                if logger: logger.debug(f"Command {i} failed: {result=}")
             else:
                 success.append('1')
-        print(f'[{timestamp}]: success = [{" ".join(success)}]')
+        # print(f'[{timestamp}]: success = [{" ".join(success)}]')
+        if logger: logger.debug(f'success = [{" ".join(success)}]')
 
-    except Exception:
+    except Exception as e:
         # Fail safely by reporting a failure in case of any exceptions
-        return 1
-    return failures
+        return False, f"Error: {e}"
+    test_result = (failures == 0)
+    return test_result, f"{failures=}"
 
 
 # def get_experiment_dir(start_timestamp, device):

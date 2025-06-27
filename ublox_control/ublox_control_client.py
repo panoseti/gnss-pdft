@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 The Python implementation of a gRPC UbloxControl client.
 
@@ -92,8 +94,6 @@ def capture_packets(stub, patterns=None):
         print(f"[ {name=} ] @ {timestamp=} : ", end="")
         pprint(parsed_data, expand_all=False)
 
-
-
 def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
     # used in circumstances in which the with statement does not fit the needs
@@ -115,7 +115,9 @@ def run(host, port=50051):
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    # logging.basicConfig()
     #run(host="10.0.0.60")
+    logger = make_rich_logger(__name__)
+    test_redis_connection("localhost", logger=logger)
     run(host="localhost")
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 The Python implementation of a gRPC UbloxControl server.
 The server requires the following to correctly:
@@ -38,11 +39,14 @@ from init_f9t_tests import *  #run_all_tests, is_os_posix, check_client_f9t_cfg_
 
 
 def f9t_io_data(
-    ubr: UBXReader,
+    device: str,
+    baudrate: int,
+    timeout: float,
     read_queues: List[Queue],
     read_queue_freemap: List[bool],
     send_queue: Queue,
     stop: Event,
+    logger: logging.Logger
 ):
     """
     THREADED
@@ -52,24 +56,30 @@ def f9t_io_data(
     Send any queued outbound messages to receiver.
     :license: BSD 3-Clause
     """
-    while not stop.is_set():
-        try:
-            (raw_data, parsed_data) = ubr.read()
-            if parsed_data:
-                for read_queue, is_allocated in read_queues, read_queue_freemap:
-                    if is_allocated:  # only populate read_queues that are actively being used
-                        read_queue.put((raw_data, parsed_data))
+    with Serial(device, baudrate, timeout=timeout) as stream:
+        ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
+        logger.info("Established serial connection to F9t chip")
+        while not stop.is_set():
+            try:
+                (raw_data, parsed_data) = ubr.read()
+                if parsed_data:
+                    for read_queue, is_allocated in zip(read_queues, read_queue_freemap):
+                        if is_allocated:  # only populate read_queues that are actively being used
+                            read_queue.put((raw_data, parsed_data))
 
-            # refine this if outbound message rates exceed inbound
-            while not send_queue.empty():
-                data = send_queue.get(False)
-                if data is not None:
-                    ubr.datastream.write(data.serialize())
-                send_queue.task_done()
+                # refine this if outbound message rates exceed inbound
+                while not send_queue.empty():
+                    data = send_queue.get(False)
+                    if data is not None:
+                        ubr.datastream.write(data.serialize())
+                    send_queue.task_done()
 
-        except Exception as err:
-            print(f"\n\nSomething went wrong - {err}\n\n")
-            continue
+            except Exception as err:
+                print(f"\n\nSomething went wrong - {err}\n\n")
+                logger.error(f"Error: {err}")
+                continue
+    logger.info("f9t_io thread exited")
+    # print("f9t_io_data exited.")
 
 
 def process_data(queue: Queue, stop: Event):
@@ -117,10 +127,10 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             self.__f9t_cfg = json.load(f)
             # check if headnode needs to first configure F9t with an InitF9t RPC
             if not self.__server_cfg["require_headnode_init"] and self.__f9t_cfg["is_valid"]:
-                self.__server_cfg['is_init_valid'] = True
+                self.__server_cfg['f9t_init_valid'] = True
                 # TODO: setup ubx connection threads here
             else:
-                self.__server_cfg['is_init_valid'] = False
+                self.__server_cfg['f9t_init_valid'] = False
 
         ## State for single producer, multiple consumer F9t access
         # A single IO thread manages the dataflow between multiple concurrent RPC threads and the F9t:
@@ -135,10 +145,17 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             self.__read_queues_freemap.append(False)
         self.__send_queue = Queue()  # Used by InitF9t and PollMessage to send SET and POLL requests to the F9t chip
         self.__stop_io = Event()  # Signals F9t IO thread to release the serial connection to the F9t
+        self.__f9t_io_thread = None
 
         # Create the server's logger
         self.logger = make_rich_logger(__name__)
 
+    def __del__(self):
+        # assert the stop event and wait for the f9t_io thread to exit
+        self.__stop_io.set()
+        if self.__f9t_io_thread is not None:
+            self.__f9t_io_thread.join()
+        self.logger.info("Successfully cleaned up resources")
 
     @contextmanager
     def __f9t_lock_writer(self):
@@ -153,16 +170,19 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             self.__f9t_rw_lock_state['aw'] += 1
             self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
         # END check-in critical section
-        yield None
-        with self.__f9t_lock:
-            # BEGIN check-out critical section
-            self.logger.debug(f"(writer) check-out (start):\t{self.__f9t_rw_lock_state=}")
-            self.__f9t_rw_lock_state['aw'] = max(0, self.__f9t_rw_lock_state['aw'] - 1)  # no longer active
-            if self.__f9t_rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
-                self.__write_ok.notify()
-            elif self.__f9t_rw_lock_state['wr'] > 0:
-                self.__read_ok.notify_all()
-            self.logger.debug(f"(writer) check-out (end):\t{self.__f9t_rw_lock_state=}")
+        try:
+            yield None
+        finally:
+            with self.__f9t_lock:
+                # BEGIN check-out critical section
+                self.logger.debug(f"(writer) check-out (start):\t{self.__f9t_rw_lock_state=}")
+                self.__f9t_rw_lock_state['aw'] = max(0, self.__f9t_rw_lock_state['aw'] - 1)  # no longer active
+                if self.__f9t_rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
+                    self.__write_ok.notify()
+                elif self.__f9t_rw_lock_state['wr'] > 0:
+                    self.__read_ok.notify_all()
+                self.logger.debug(f"(writer) check-out (end):\t{self.__f9t_rw_lock_state=}")
+                # END check-out critical section
 
     @contextmanager
     def __f9t_lock_reader(self):
@@ -182,60 +202,79 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 if not is_allocated:
                     read_fmap_idx = idx
                     self.__read_queues_freemap[idx] = True
+                    break
+            self.logger.debug(f"{self.__read_queues_freemap=}")
             if read_fmap_idx == -1:
                 self.logger.critical("read_queue_freemap allocation failed! [SHOULD NEVER HAPPEN]")
             self.logger.debug(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}")
             # END check-in critical section
-        yield read_fmap_idx
-        with self.__f9t_lock:
-            # BEGIN check-out critical section
-            self.logger.debug(f"(reader) check-out (start):\t{self.__f9t_rw_lock_state=}")
-            self.__f9t_rw_lock_state['ar'] = max(0, self.__f9t_rw_lock_state['ar'] - 1)  # no longer active
-            self.__read_queues_freemap[read_fmap_idx] = False  # release the read queue
-            # Wake up waiting reader / writers (prioritize waiting writers).
-            if self.__f9t_rw_lock_state['ar'] == 0 and self.__f9t_rw_lock_state['ww'] > 0:
-                self.__write_ok.notify()
-            elif self.__f9t_rw_lock_state['wr'] > 0:
-                self.__read_ok.notify_all()
-            self.logger.debug(f"(reader) check-out (end):\t{self.__f9t_rw_lock_state=}")
-            # END check-out critical section
+        try:
+            yield read_fmap_idx
+        finally:
+            with self.__f9t_lock:
+                # BEGIN check-out critical section
+                self.logger.debug(f"(reader) check-out (start):\t{self.__f9t_rw_lock_state=}")
+                self.__f9t_rw_lock_state['ar'] = max(0, self.__f9t_rw_lock_state['ar'] - 1)  # no longer active
+                self.__read_queues_freemap[read_fmap_idx] = False  # release the read queue
+                # Wake up waiting reader / writers (prioritize waiting writers).
+                if self.__f9t_rw_lock_state['ar'] == 0 and self.__f9t_rw_lock_state['ww'] > 0:
+                    self.__write_ok.notify()
+                elif self.__f9t_rw_lock_state['wr'] > 0:
+                    self.__read_ok.notify_all()
+                self.logger.debug(f"(reader) check-out (end):\t{self.__f9t_rw_lock_state=}")
+                # END check-out critical section
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
         f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'cfg_key_settings', 'comments']
-        with self.__f9t_lock_writer():
-            # BEGIN critical section for F9t [write] access
-            commit_changes = True
-            test_results = []
-            time.sleep(1)  # DEBUG: add delay to expose race conditions
+        test_results = []
+        time.sleep(1)  # DEBUG: add delay to expose race conditions
 
-            client_f9t_cfg = MessageToDict(request.f9t_cfg)
-            # TODO: Validate f9t_cfg here:
-            #  0. System is POSIX
-            #  1. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
-            #  2. device file is valid
-            #  3. device file points to an f9t chip
-            #  4. we can send SET and POLL requests to the chip and read responses with GET
-            #  5. all keys under "set_cfg_keys" are valid and supported by pyubx2
-            cfg_all_pass, cfg_test_results = run_all_tests(
-                test_fn_list=[
-                    is_os_posix,
-                    check_client_f9t_cfg_keys,
-                    is_device_valid,
-                ],
-                args_list=[
-                    [],
-                    [f9t_cfg_keys_to_copy, client_f9t_cfg.keys()],
-                    [client_f9t_cfg['device']]
-                ]
-            )
-            commit_changes = cfg_all_pass
-            test_results.extend(cfg_test_results)
+        client_f9t_cfg = MessageToDict(request.f9t_cfg)
+        # TODO: Validate f9t_cfg here:
+        #  0. System is POSIX
+        #  1. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
+        #  2. device file is valid
+        #  3. device file points to an f9t chip
+        #  4. we can send SET and POLL requests to the chip and read responses with GET
+        #  5. all keys under "set_cfg_keys" are valid and supported by pyubx2
+        cfg_all_pass, cfg_test_results = run_all_tests(
+            test_fn_list=[
+                is_os_posix,
+                check_client_f9t_cfg_keys,
+                is_device_valid,
+            ],
+            args_list=[
+                [],
+                [f9t_cfg_keys_to_copy, client_f9t_cfg.keys()],
+                [client_f9t_cfg['device']]
+            ]
+        )
+        commit_changes = cfg_all_pass
+        test_results.extend(cfg_test_results)
 
-            # TODO: Do F9t initialization
-            #   Set the configuration according to client_f9t_cfg['set_cfg_keys'].
-            #   NOTE: unspecified keys are returned to default values.
-            if commit_changes:
+        # TODO: Do F9t initialization
+        #   Set the configuration according to client_f9t_cfg['set_cfg_keys'].
+        #   NOTE: unspecified keys are returned to default values.
+        if commit_changes:
+
+            # Only attempt to enter writer critical section if the client gave us a valid F9t configuration
+            with self.__f9t_lock_writer():
+                # BEGIN critical section for F9tInit [write] access
+                # create serial connection to the F9t device
+                self.__f9t_io_thread = Thread(
+                    target=f9t_io_data,
+                    args=(
+                        self.__f9t_cfg['device'],
+                        F9T_BAUDRATE,
+                        self.__f9t_cfg['timeout'],
+                        self.__read_queues,
+                        self.__send_queue,
+                        self.__stop_io,
+                        self.logger
+                    ),
+                    daemon=True,
+                )
 
                 # Run tests to verify f9t initialization succeeded
                 init_all_pass, init_test_results = run_all_tests(
@@ -246,22 +285,24 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         [client_f9t_cfg]
                     ]
                 )
-                # Cancel transaction if any tests fail
                 commit_changes = init_all_pass
                 test_results.extend(init_test_results)
-            # Commit changes to self._f9t_cfg only if all tests pass
-            if commit_changes:
-                self.__server_cfg['is_init_valid'] = True
-                self.__f9t_cfg['is_valid'] = True
-                for key in f9t_cfg_keys_to_copy:
-                    self.__f9t_cfg[key] = client_f9t_cfg[key]
-                message = "InitF9t transaction successful"
-                init_status = ublox_control_pb2.InitSummary.InitStatus.SUCCESS
-            else:
-                # TODO: rollback F9t configuration to previous config specified by self._f9t_cfg
-                message = "InitF9t transaction cancelled. See the test_cases field for information about failing tests"
-                init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
-            # END critical section for F9t [write] access
+                # Commit changes to self._f9t_cfg only if all tests pass
+                if commit_changes:
+                    self.__server_cfg['f9t_init_valid'] = True
+                    self.__f9t_cfg['is_valid'] = True
+                    for key in f9t_cfg_keys_to_copy:
+                        self.__f9t_cfg[key] = client_f9t_cfg[key]
+                    message = "InitF9t transaction successful"
+                    init_status = ublox_control_pb2.InitSummary.InitStatus.SUCCESS
+                else:
+                    # Cancel transaction if any tests fail
+                    # TODO: rollback F9t configuration to previous config specified by self._f9t_cfg
+                    ...
+                # END critical section for F9t [write] access
+        if not commit_changes:
+            message = "InitF9t transaction cancelled. See the test_cases field for information about failing tests"
+            init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
 
         # Send summary of initialization process to client
         init_summary = ublox_control_pb2.InitSummary(
@@ -279,16 +320,17 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         regex_list = [re.compile(pattern) for pattern in patterns]
         # TODO: check if the patterns are valid
         with self.__f9t_lock_reader() as rid:  # rid = allocated reader id
-            # initialize read_queue
-            read_queue = self.__read_queues[rid]
-            read_queue.clear()
+            # Clear the read_queue
+            rq = self.__read_queues[rid]
+            with rq.mutex:
+                rq.queue.clear()
             time.sleep(1)
             # BEGIN critical section for F9t [read] access
-            if self.__server_cfg['is_init_valid']:
+            if self.__server_cfg['f9t_init_valid']:
                 self.logger.info("Streaming messages matching ")
                 while context.is_active():
                     # Generate next response
-                    time.sleep(random.uniform(0.1, 0.5)) # simulate waiting for next u-blox packet
+                    time.sleep(random.uniform(0.1, 0.5))  # simulate waiting for next u-blox packet
                     # TODO: replace these hard-coded values with packets received from the connected u-blox chip
                     name = "TEST"
                     parsed_data = {

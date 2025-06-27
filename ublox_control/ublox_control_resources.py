@@ -39,14 +39,14 @@ with open(cfg_dir/default_f9t_cfg_file) as f:
     default_f9t_cfg = json.load(f)
 
 
-def make_rich_logger(name):
+def make_rich_logger(name, level=logging.DEBUG):
     LOG_FORMAT = (
         "[tid=%(thread)d] [%(funcName)s()] %(message)s "
         # "[%(filename)s:%(lineno)d %(funcName)s()]"
     )
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=level,
         format=LOG_FORMAT,
         datefmt="%H:%M:%S",
         # datefmt="%Y-%m-%d %H:%M:%S",

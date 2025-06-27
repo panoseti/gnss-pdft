@@ -8,6 +8,7 @@ The server requires the following to correctly:
     2. A valid /dev file for a connected ZED-F9T u-blox chip.
     3. The installation of all Python packages specified in requirements.txt.
 """
+import logging
 import random
 from concurrent import futures
 import threading
@@ -198,29 +199,29 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         self.__f9t_io_thread = None
 
         # Create the server's logger
-        self.logger = make_rich_logger(__name__)
+        self.logger = make_rich_logger(__name__, level=logging.INFO)
 
     def __del__(self):
         # assert the stop event and wait for the f9t_io thread to exit
         self.__stop_io.set()
         if self.__f9t_io_thread is not None:
             self.__f9t_io_thread.join()
-        self.logger.info("Successfully cleaned up resources")
+        self.logger.info("Successfully freed resources")
 
     @contextmanager
     def __f9t_lock_writer(self):
-        with self.__f9t_lock:
-            # BEGIN check-in critical section
-            # Wait until no active readers or active writers
-            self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
-            self.__f9t_rw_lock_state['ww'] += 1
-            while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
-                self.__write_ok.wait()
-            self.__f9t_rw_lock_state['ww'] -= 1
-            self.__f9t_rw_lock_state['aw'] += 1
-            self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
-        # END check-in critical section
         try:
+            with self.__f9t_lock:
+                # BEGIN check-in critical section
+                # Wait until no active readers or active writers
+                self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
+                self.__f9t_rw_lock_state['ww'] += 1
+                while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
+                    self.__write_ok.wait()
+                self.__f9t_rw_lock_state['ww'] -= 1
+                self.__f9t_rw_lock_state['aw'] += 1
+                self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
+                # END check-in critical section
             yield None
         finally:
             with self.__f9t_lock:
@@ -237,28 +238,28 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     @contextmanager
     def __f9t_lock_reader(self):
         read_fmap_idx = -1  # remember which read_queue freemap entry corresponds to this thread
-        with self.__f9t_lock:
-            # BEGIN check-in critical section
-            # Wait until no active writers
-            self.__f9t_rw_lock_state['wr'] += 1
-            self.logger.debug(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
-            while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
-                self.__read_ok.wait()
-            self.__f9t_rw_lock_state['wr'] -= 1
-            self.__f9t_rw_lock_state['ar'] += 1
-
-            # allocate a read queue for this thread
-            for idx, is_allocated in enumerate(self.__read_queues_freemap):
-                if not is_allocated:
-                    read_fmap_idx = idx
-                    self.__read_queues_freemap[idx] = True
-                    break
-            self.logger.debug(f"{self.__read_queues_freemap=}")
-            if read_fmap_idx == -1:
-                self.logger.critical("read_queue_freemap allocation failed! [SHOULD NEVER HAPPEN]")
-            self.logger.debug(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}")
-            # END check-in critical section
         try:
+            with self.__f9t_lock:
+                # BEGIN check-in critical section
+                # Wait until no active writers
+                self.__f9t_rw_lock_state['wr'] += 1
+                self.logger.debug(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
+                while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
+                    self.__read_ok.wait()
+                self.__f9t_rw_lock_state['wr'] -= 1
+                self.__f9t_rw_lock_state['ar'] += 1
+
+                # allocate a read queue for this thread
+                for idx, is_allocated in enumerate(self.__read_queues_freemap):
+                    if not is_allocated:
+                        read_fmap_idx = idx
+                        self.__read_queues_freemap[idx] = True
+                        break
+                self.logger.info(f"{self.__read_queues_freemap=}")
+                if read_fmap_idx == -1:
+                    self.logger.critical("read_queue_freemap allocation failed! [SHOULD NEVER HAPPEN]")
+                self.logger.info(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}")
+                # END check-in critical section
             yield read_fmap_idx
         finally:
             with self.__f9t_lock:
@@ -449,7 +450,8 @@ def serve(server_cfg):
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("'^C' received, shutting down the server.")
+        print("'^C' received, shutting down the server in 5 seconds.")
+        server.stop(grace=5).wait()
 
 
 

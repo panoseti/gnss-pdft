@@ -87,7 +87,8 @@ def capture_packets(stub, patterns=None):
     packet_data_stream = stub.CapturePackets(
         make_capture_command(patterns)
     )
-    for i, packet_data in zip(range(random.randint(10, 10)), packet_data_stream):
+    #for i, packet_data in zip(range(random.randint(10, 20)), packet_data_stream):
+    for packet_data in packet_data_stream:
         name = packet_data.name
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime().isoformat()
@@ -107,12 +108,12 @@ def run(host, port=50051):
             get_services(channel)
 
             #for i in range(1):
-            while True:
+            if random.random() > 0.5:
                 print("-------------- InitF9t --------------")
                 init_f9t(stub, default_f9t_cfg)
 
-                print("-------------- CapturePackets --------------")
-                capture_packets(stub)
+            print("-------------- CapturePackets --------------")
+            capture_packets(stub)
     except KeyboardInterrupt:
         logger.info("Closing UbloxControl channel")
 
@@ -122,5 +123,5 @@ if __name__ == "__main__":
     logger = make_rich_logger(__name__)
     test_redis_connection("localhost", logger=logger)
     run(host="10.0.0.60")
-    # run(host="localhost")
+    run(host="localhost")
 

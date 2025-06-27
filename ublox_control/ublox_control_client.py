@@ -90,7 +90,7 @@ def capture_packets(stub, patterns=None):
     for i, packet_data in zip(range(random.randint(100, 100)), packet_data_stream):
         name = packet_data.name
         parsed_data = MessageToDict(packet_data.parsed_data)
-        timestamp = packet_data.timestamp.ToDatetime()
+        timestamp = packet_data.timestamp.ToDatetime().isoformat()
         print(f"[ {name=} ] @ {timestamp=} : ", end="")
         pprint(parsed_data, expand_all=False)
 
@@ -99,19 +99,22 @@ def run(host, port=50051):
     # used in circumstances in which the with statement does not fit the needs
     # of the code.
     connection_target = f"{host}:{port}"
-    with grpc.insecure_channel(connection_target) as channel:
-        stub = ublox_control_pb2_grpc.UbloxControlStub(channel)
+    try:
+        with grpc.insecure_channel(connection_target) as channel:
+            stub = ublox_control_pb2_grpc.UbloxControlStub(channel)
 
-        print("-------------- ServerReflection --------------")
-        get_services(channel)
+            print("-------------- ServerReflection --------------")
+            get_services(channel)
 
-        #for i in range(1):
-        while True:
-            print("-------------- InitF9t --------------")
-            init_f9t(stub, default_f9t_cfg)
+            #for i in range(1):
+            while True:
+                print("-------------- InitF9t --------------")
+                init_f9t(stub, default_f9t_cfg)
 
-            print("-------------- CapturePackets --------------")
-            capture_packets(stub)
+                print("-------------- CapturePackets --------------")
+                capture_packets(stub)
+    except KeyboardInterrupt:
+        logger.info("Closing UbloxControl channel")
 
 
 if __name__ == "__main__":

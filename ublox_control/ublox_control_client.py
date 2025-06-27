@@ -87,7 +87,7 @@ def capture_packets(stub, patterns=None):
     packet_data_stream = stub.CapturePackets(
         make_capture_command(patterns)
     )
-    for i, packet_data in zip(range(random.randint(10, 20)), packet_data_stream):
+    for i, packet_data in zip(range(random.randint(10, 10)), packet_data_stream):
         name = packet_data.name
         parsed_data = MessageToDict(packet_data.parsed_data)
         timestamp = packet_data.timestamp.ToDatetime().isoformat()
@@ -119,8 +119,8 @@ def run(host, port=50051):
 
 if __name__ == "__main__":
     # logging.basicConfig()
-    #run(host="10.0.0.60")
     logger = make_rich_logger(__name__)
     test_redis_connection("localhost", logger=logger)
-    run(host="localhost")
+    run(host="10.0.0.60")
+    # run(host="localhost")
 

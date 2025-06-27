@@ -103,7 +103,7 @@ def f9t_io_data_DEBUG(
     logger.info("Established serial connection to F9t chip")
     while not stop.is_set():
         try:
-            time.sleep(0.5)
+            time.sleep(0.3)
             parsed_data = {
                 "identity": "f9t_io DEBUG",
                 "test_field": random.choice(["fox", "socks", "box", "knox"]),
@@ -278,7 +278,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         """Configure a connected F9t chip. [writer]"""
         f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'cfg_key_settings', 'comments']
         test_results = []
-        time.sleep(1)  # DEBUG: add delay to expose race conditions
 
         client_f9t_cfg = MessageToDict(request.f9t_cfg)
         # TODO: Validate f9t_cfg here:
@@ -310,6 +309,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
             # Only enter critical section as a writer if the client's F9t configuration is valid
             with self.__f9t_lock_writer():
+                time.sleep(0.5)  # DEBUG: add delay to expose race conditions
                 # BEGIN critical section for F9tInit [write] access
                 # Terminate any previous F9t_io thread
                 if self.__f9t_io_thread is not None:
@@ -382,7 +382,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         # TODO: check if the patterns are valid
         with self.__f9t_lock_reader() as rid:  # rid = allocated reader id
             # Clear the read_queue of old data
-            time.sleep(0.5)
+            #time.sleep(0.)
             rq = self.__read_queues[rid]
             while not rq.empty():
                 rq.get()
@@ -394,7 +394,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     raw_data, parsed_data = rq.get()
                     self.logger.debug(f"got {parsed_data=}")
                     # Generate next response
-                    time.sleep(random.uniform(0.1, 0.5))  # simulate waiting for next u-blox packet
+                    # time.sleep(random.uniform(0.1, 0.5))  # simulate waiting for next u-blox packet
                     # TODO: replace these hard-coded values with packets received from the connected u-blox chip
                     name = parsed_data['identity']
                     #name = parsed_data.identity
@@ -403,9 +403,9 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         ...
                     parsed_data_dict = {
                         'qErr': random.randint(-4, 4),
-                        'field2': 'hello',
-                        'field4': None,
-                        'f9t_io_test_field': parsed_data['test_field'],
+                        # 'field2': 'hello',
+                        # 'field4': None,
+                        'test_field': parsed_data['test_field'],
                         'uid': parsed_data['id'],
                     }
                     timestamp = timestamp_pb2.Timestamp()

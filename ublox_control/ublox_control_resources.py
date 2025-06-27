@@ -48,7 +48,8 @@ def make_rich_logger(name):
     logging.basicConfig(
         level=logging.DEBUG,
         format=LOG_FORMAT,
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%H:%M:%S",
+        # datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[RichHandler(rich_tracebacks=True)]
     )
     return logging.getLogger(name)

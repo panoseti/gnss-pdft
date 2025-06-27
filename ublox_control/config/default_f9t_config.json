@@ -1,7 +1,7 @@
 {
-  "is_valid": false,
+  "is_valid": true,
   "chip_name": "ZED-F9T",
-  "chip_uid": "",
+  "chip_uid": "DEADBEEFED",
   "device": "/dev/...",
   "timeout": 1,
   "comments": "",

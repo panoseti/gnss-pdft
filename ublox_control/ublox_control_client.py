@@ -9,6 +9,8 @@ import logging
 import queue
 import random
 
+import pyubx2
+import redis
 from rich import print
 from rich.pretty import pprint
 import re
@@ -59,22 +61,27 @@ def get_services(channel):
         print(f"\tfound: {format_rpc_service(method)}")
 
 
-def init_f9t(stub, f9t_config):
+def init_f9t(stub, f9t_cfg) -> dict:
     """Initializes an F9T device according to the specification in f9t_config."""
-    f9t_config_msg = F9tConfig(
-        f9t_cfg=ParseDict(f9t_config, Struct())
+    f9t_config = F9tConfig(
+        f9t_cfg=ParseDict(f9t_cfg, Struct())
     )
-    init_summary = stub.InitF9t(f9t_config_msg)
-    print(f'init_summary.status=', InitSummary.InitStatus.Name(init_summary.init_status))
+    init_summary = stub.InitF9t(f9t_config)
+    # unpack init_summary
+    init_status = InitSummary.InitStatus.Name(init_summary.init_status)
+    curr_f9t_cfg = MessageToDict(init_summary.f9t_cfg, preserving_proto_field_name=True)
+    print(f'init_summary.status=', init_status)
     print(f'{init_summary.message=}')
-    print("init_summary.f9t_state=", end='')
-    pprint(MessageToDict(init_summary.f9t_cfg, preserving_proto_field_name=True), expand_all=True)
-    for i, test_result in enumerate(init_summary.test_results):
-        print(f'TEST {i}:')
-        print("\t" + str(test_result).replace("\n", "\n\t"))
+    print("init_summary.f9t_cfg=", curr_f9t_cfg, end='')
+    pprint(curr_f9t_cfg, expand_all=True)
+    print(init_summary.test_results)
+    # for i, test_result in enumerate(init_summary.test_results):
+    #     print(f'TEST {i}:')
+    #     print("\t" + str(test_result).replace("\n", "\n\t"))
+    return curr_f9t_cfg
 
 
-def capture_packets(stub, patterns=None):
+def capture_packets(stub, patterns, f9t_cfg):
     # valid_capture_command_aliases = ['start', 'stop']
 
     def make_capture_command(pats):
@@ -84,16 +91,36 @@ def capture_packets(stub, patterns=None):
             re.compile(pat)  # verify each regex pattern compiles
         return CaptureCommand(patterns=pats)
 
+    def format_packet_data(name, parsed_data, timestamp: datetime.datetime):
+        timestamp = timestamp.isoformat()
+        return f"{name=} : {timestamp=} : {parsed_data}"
+
+    def write_packet_data_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp: datetime.datetime):
+        # curr_time = datetime.datetime.now(tz=datetime.timezone.utc)
+        # TODO: write methods to unpack parsed data
+        rkey = get_f9t_redis_key(chip_name, chip_uid, packet_id)
+        for k, v in parsed_data.items():
+            r.hset(rkey, k, v)
+        timestamp_float = timestamp.timestamp()  # timestamp when packet was received by the daq node
+        r.hset(rkey, 'Computer_UTC', timestamp_float)
+
+    # start packet stream
     packet_data_stream = stub.CapturePackets(
         make_capture_command(patterns)
     )
-    #for i, packet_data in zip(range(random.randint(10, 20)), packet_data_stream):
-    for packet_data in packet_data_stream:
-        name = packet_data.name
-        parsed_data = MessageToDict(packet_data.parsed_data)
-        timestamp = packet_data.timestamp.ToDatetime().isoformat()
-        print(f"[ {name=} ] @ {timestamp=} : ", end="")
-        pprint(parsed_data, expand_all=False)
+
+    redis_host, redis_port = "localhost", 6379
+    chip_name = f9t_cfg['chip_name']
+    chip_uid = f9t_cfg['chip_uid']
+    with redis.Redis(host=redis_host, port=redis_port) as r:
+        for packet_data in packet_data_stream:
+            packet_id = packet_data.name
+            parsed_data = MessageToDict(packet_data.parsed_data)
+            timestamp = packet_data.timestamp.ToDatetime()
+            print(format_packet_data(packet_id, parsed_data, timestamp))
+            write_packet_data_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp)
+
+
 
 def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
@@ -108,20 +135,37 @@ def run(host, port=50051):
             get_services(channel)
 
             #for i in range(1):
-            if random.random() > 0.5:
-                print("-------------- InitF9t --------------")
-                init_f9t(stub, default_f9t_cfg)
+            print("-------------- InitF9t --------------")
+            client_f9t_cfg = default_f9t_cfg
+            client_f9t_cfg['chip_uid'] = 'DEADBEEFED'
+            curr_f9t_cfg = client_f9t_cfg
+            # curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
 
             print("-------------- CapturePackets --------------")
-            capture_packets(stub)
+            capture_packets(stub, None, curr_f9t_cfg)
     except KeyboardInterrupt:
-        logger.info("Closing UbloxControl channel")
+        logger.info(f"'^C' received, closing connection to UbloxControl server at {repr(connection_target)}")
+    except grpc.RpcError as rpc_error:
+        logger.error(f"{type(rpc_error)}\n{repr(rpc_error)}")
 
 
 if __name__ == "__main__":
     # logging.basicConfig()
     logger = make_rich_logger(__name__)
-    test_redis_connection("localhost", logger=logger)
+
+    # Run client-side tests
+    print("-------------- Client-side Tests --------------")
+    all_pass, _ = run_all_tests(
+        test_fn_list=[
+            test_redis_connection,
+        ],
+        args_list=[
+            ["localhost", 6379, 1, logger]
+        ]
+    )
+    assert all_pass, "at least one client-side test failed"
+    # test_redis_connection("localhost", logger=logger)
     # run(host="10.0.0.60")
     run(host="localhost")
+
 

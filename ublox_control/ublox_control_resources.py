@@ -119,6 +119,7 @@ def test_redis_connection(host, port=6379, socket_timeout=1, logger=None) -> Tup
         r = redis.Redis(host=host, port=port, db=0, socket_timeout=socket_timeout)
         if not r.ping():
             # raise FileNotFoundError(f'Cannot connect to {host}:{port}')
+            if logger: logger.error(f"Cannot connect to {host}:{port}")
             return False, f'Cannot connect to {host}:{port}'
 
         timestamp = datetime.datetime.now().isoformat()
@@ -145,7 +146,9 @@ def test_redis_connection(host, port=6379, socket_timeout=1, logger=None) -> Tup
             else:
                 success.append('1')
         # print(f'[{timestamp}]: success = [{" ".join(success)}]')
-        if logger: logger.debug(f'success = [{" ".join(success)}]')
+        if logger:
+            if all(success):
+                logger.debug(f'success = [{" ".join(success)}]')
 
     except Exception as e:
         # Fail safely by reporting a failure in case of any exceptions

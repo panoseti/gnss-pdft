@@ -31,7 +31,7 @@ import ublox_control_pb2_grpc
 
 # alias messages to improve readability
 from ublox_control_resources import *
-from init_f9t_tests import run_all_tests, is_os_posix, check_client_f9t_cfg_keys
+from init_f9t_tests import *#run_all_tests, is_os_posix, check_client_f9t_cfg_keys
 
 
 
@@ -47,7 +47,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
         self.cfg_dir = cfg_dir
         self.server_cfg_file = server_cfg_file
-
 
         # Initialize mesa monitor for synchronizing access to the F9T chip
         #   "Writers" = threads executing the InitF9t RPC.
@@ -76,7 +75,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             else:
                 self._f9t_cfg['is_init_valid'] = False
 
-
         # Configure the server's logger
         LOG_FORMAT = (
             "[tid=%(thread)d] [%(funcName)s()] %(message)s "
@@ -84,7 +82,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         )
 
         logging.basicConfig(
-            level=logging.DEBUG,
+            level=logging.INFO,
             format=LOG_FORMAT,
             datefmt="%Y-%m-%d %H:%M:%S",
             handlers=[RichHandler(rich_tracebacks=True)]
@@ -93,18 +91,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def InitF9t(self, request, context):
         """Configure a connected F9t chip. [writer]"""
-        tid = threading.get_ident()
-        # Define test suites
-        init_f9t_tests = {
-            "validate_cfg": {
-                "test_fn_list": [is_os_posix],
-                "args_list": [()]
-            },
-            "validate_init": {
-                "test_fn_list": [check_client_f9t_cfg_keys],
-                "args_list": []
-            }
-        }
         f9t_cfg_keys_to_copy = ['device', 'chip_name', 'timeout', 'set_cfg_keys', 'comments']
         try:
             with self.lock:
@@ -125,15 +111,20 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
             client_f9t_cfg = MessageToDict(request.f9t_cfg)
             # TODO: Validate f9t_cfg here:
-            #  1. device file is valid and points to an f9t chip
-            #  2. we can send SET and POLL requests to the chip and read responses with GET
-            #  3. all keys under "set_cfg_keys" are valid and supported by pyubx2
-            #  4. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
-            if not set(f9t_cfg_keys_to_copy).issubset(set(client_f9t_cfg.keys())):  # TODO: make this a test fn
-                commit_changes = False
+            #  1. all keys in f9t_cfg_keys_to_copy are present in client_f9t_cfg
+            #  2. device file is valid
+            #  3. device file points to an f9t chip
+            #  4. we can send SET and POLL requests to the chip and read responses with GET
+            #  5. all keys under "set_cfg_keys" are valid and supported by pyubx2
             cfg_all_pass, cfg_test_results = run_all_tests(
-                test_fn_list=[check_client_f9t_cfg_keys],
-                args_list=[(f9t_cfg_keys_to_copy, client_f9t_cfg.keys())]
+                test_fn_list=[
+                    check_client_f9t_cfg_keys,
+                    is_device_valid,
+                ],
+                args_list=[
+                    [f9t_cfg_keys_to_copy, client_f9t_cfg.keys()],
+                    [client_f9t_cfg['device']]
+                ]
             )
             commit_changes = cfg_all_pass
             test_results.extend(cfg_test_results)
@@ -147,7 +138,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 # Run tests to verify f9t initialization succeeded
                 init_all_pass, init_test_results = run_all_tests(
                     test_fn_list=[is_os_posix],
-                    args_list=[()]
+                    args_list=[[]]
                 )
                 # Cancel transaction if any tests fail
                 commit_changes = init_all_pass
@@ -188,7 +179,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def CapturePackets(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
-        tid = threading.get_ident()
         try:
             with self.lock:
                 # BEGIN check-in critical section

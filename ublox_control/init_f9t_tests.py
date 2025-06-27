@@ -17,7 +17,7 @@ from ublox_control_pb2 import TestCase, InitSummary
 
 def run_all_tests(
         test_fn_list: List[Callable[..., Tuple[bool, str]]],
-        args_list: List[Tuple | Tuple[Any | List[Any], Any]],
+        args_list: List[List[...]],
 ) -> Tuple[bool, type(TestCase.TestResult)]:
     """
     Runs each test function in [test_functions].
@@ -41,7 +41,7 @@ def run_all_tests(
         test_results.append(test_result)
     return all_pass, test_results
 
-def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys: List[str]):
+def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys: List[str]) -> Tuple[bool, str]:
     """Verify the client's f9t config keys contain all required keys."""
     required_key_set = set(required_f9t_cfg_keys)
     client_key_set = set(client_f9t_keys)
@@ -51,6 +51,14 @@ def check_client_f9t_cfg_keys(required_f9t_cfg_keys: List[str], client_f9t_keys:
         required_key_diff = required_key_set.difference(client_key_set)
         return False, f"the given f9t_cfg is missing the following required keys: {required_key_diff}"
 
+
+def is_device_valid(device: str) -> Tuple[bool, str]:
+    if not device:
+        return False, f"{device=} is empty"
+    elif os.path.exists(device):
+        return True, f"{device} is valid"
+    else:
+        return False, f"{device} does not exist"
 
 
 def is_os_posix():

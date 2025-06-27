@@ -10,6 +10,9 @@ The server requires the following to correctly:
 import random
 from concurrent import futures
 import threading
+from threading import Event, Thread
+from queue import Queue
+from serial import Serial
 import time
 import re
 
@@ -23,14 +26,66 @@ from google.protobuf.struct_pb2 import Struct
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf import timestamp_pb2
 
+from pyubx2 import POLL, UBX_PAYLOADS_POLL, UBX_PROTOCOL, UBXMessage, UBXReader
+
 # protoc-generated marshalling / demarshalling code
 import ublox_control_pb2
 import ublox_control_pb2_grpc
 
 # alias messages to improve readability
 from ublox_control_resources import *
-from init_f9t_tests import *#run_all_tests, is_os_posix, check_client_f9t_cfg_keys
+from init_f9t_tests import *  #run_all_tests, is_os_posix, check_client_f9t_cfg_keys
 
+
+def f9t_io_data(
+    ubr: UBXReader,
+    read_queues: List[Queue],
+    read_queue_freemap: List[bool],
+    send_queue: Queue,
+    stop: Event,
+):
+    """
+    THREADED
+    Read and parse inbound UBX data and place
+    raw and parsed data on queue.
+
+    Send any queued outbound messages to receiver.
+    :license: BSD 3-Clause
+    """
+    while not stop.is_set():
+        try:
+            (raw_data, parsed_data) = ubr.read()
+            if parsed_data:
+                for read_queue, is_allocated in read_queues, read_queue_freemap:
+                    if is_allocated:  # only populate read_queues that are actively being used
+                        read_queue.put((raw_data, parsed_data))
+
+            # refine this if outbound message rates exceed inbound
+            while not send_queue.empty():
+                data = send_queue.get(False)
+                if data is not None:
+                    ubr.datastream.write(data.serialize())
+                send_queue.task_done()
+
+        except Exception as err:
+            print(f"\n\nSomething went wrong - {err}\n\n")
+            continue
+
+
+def process_data(queue: Queue, stop: Event):
+    """
+    THREADED
+    Get UBX data from queue and display.
+    :author: semuadmin
+    :copyright: SEMU Consulting © 2021
+    :license: BSD 3-Clause
+    """
+
+    while not stop.is_set():
+        if queue.empty() is False:
+            (_, parsed) = queue.get()
+            print(parsed)
+            queue.task_done()
 
 
 """gRPC server implementing UbloxControl RPCs"""
@@ -38,13 +93,10 @@ from init_f9t_tests import *#run_all_tests, is_os_posix, check_client_f9t_cfg_ke
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
-    def __init__(self, server_cfg_file="ublox_control_server_config.json"):
+    def __init__(self, server_cfg):
         # verify the server is running on a POSIX-compliant system
         test_result, msg = is_os_posix()
         assert test_result, msg
-
-        self.cfg_dir = cfg_dir
-        self.server_cfg_file = server_cfg_file
 
         # Initialize mesa monitor for synchronizing access to the F9T chip
         #   "Writers" = threads executing the InitF9t RPC.
@@ -59,10 +111,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         self.__read_ok = threading.Condition(self.__f9t_lock)
         self.__write_ok = threading.Condition(self.__f9t_lock)
 
-        # Load server configuration
-        with open(cfg_dir/server_cfg_file, "r") as f:
-            self.__server_cfg = json.load(f)
-
+        self.__server_cfg = server_cfg
         # Load F9t configuration
         with open(cfg_dir/self.__server_cfg["f9t_cfg_file"], "r") as f:
             self.__f9t_cfg = json.load(f)
@@ -73,8 +122,23 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             else:
                 self.__server_cfg['is_init_valid'] = False
 
+        ## State for single producer, multiple consumer F9t access
+        # A single IO thread manages the dataflow between multiple concurrent RPC threads and the F9t:
+        #   [single RPC writer -> F9t IO thread] write POLL and SET requests to the F9t
+        #   [F9t IO thread -> many RPC readers] read (GET) packets from the F9t and write to max_workers read_queues
+
+        # Create an array of read_queues and freemap locks to support up to max_worker concurrent reader RPCs
+        self.__read_queues = []  # Duplicate queues to implement single producer, multiple independent consumer model
+        self.__read_queues_freemap = []  # True iff corresponding queue is allocated to a reader
+        for _ in range(server_cfg['max_workers']):
+            self.__read_queues.append(Queue(maxsize=server_cfg['max_read_queue_size']))
+            self.__read_queues_freemap.append(False)
+        self.__send_queue = Queue()  # Used by InitF9t and PollMessage to send SET and POLL requests to the F9t chip
+        self.__stop_io = Event()  # Signals F9t IO thread to release the serial connection to the F9t
+
         # Create the server's logger
         self.logger = make_rich_logger(__name__)
+
 
     @contextmanager
     def __f9t_lock_writer(self):
@@ -102,6 +166,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     @contextmanager
     def __f9t_lock_reader(self):
+        read_fmap_idx = -1  # remember which read_queue freemap entry corresponds to this thread
         with self.__f9t_lock:
             # BEGIN check-in critical section
             # Wait until no active writers
@@ -111,14 +176,23 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.__read_ok.wait()
             self.__f9t_rw_lock_state['wr'] -= 1
             self.__f9t_rw_lock_state['ar'] += 1
-            self.logger.debug(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
+
+            # allocate a read queue for this thread
+            for idx, is_allocated in enumerate(self.__read_queues_freemap):
+                if not is_allocated:
+                    read_fmap_idx = idx
+                    self.__read_queues_freemap[idx] = True
+            if read_fmap_idx == -1:
+                self.logger.critical("read_queue_freemap allocation failed! [SHOULD NEVER HAPPEN]")
+            self.logger.debug(f"(reader) check-in (end):\t\t{self.__f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}")
             # END check-in critical section
-        yield None
+        yield read_fmap_idx
         with self.__f9t_lock:
             # BEGIN check-out critical section
             self.logger.debug(f"(reader) check-out (start):\t{self.__f9t_rw_lock_state=}")
             self.__f9t_rw_lock_state['ar'] = max(0, self.__f9t_rw_lock_state['ar'] - 1)  # no longer active
-            # Give lock priority to waiting writers
+            self.__read_queues_freemap[read_fmap_idx] = False  # release the read queue
+            # Wake up waiting reader / writers (prioritize waiting writers).
             if self.__f9t_rw_lock_state['ar'] == 0 and self.__f9t_rw_lock_state['ww'] > 0:
                 self.__write_ok.notify()
             elif self.__f9t_rw_lock_state['wr'] > 0:
@@ -200,10 +274,14 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def CapturePackets(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
+        # unpack the requested message pattern filters
         patterns = request.patterns
         regex_list = [re.compile(pattern) for pattern in patterns]
         # TODO: check if the patterns are valid
-        with self.__f9t_lock_reader():
+        with self.__f9t_lock_reader() as rid:  # rid = allocated reader id
+            # initialize read_queue
+            read_queue = self.__read_queues[rid]
+            read_queue.clear()
             time.sleep(1)
             # BEGIN critical section for F9t [read] access
             if self.__server_cfg['is_init_valid']:
@@ -242,11 +320,11 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 yield packet_data
             # End critical section for F9t [read] access
 
-def serve():
+def serve(server_cfg):
     """Create the gRPC server threadpool and start providing the UbloxControl service."""
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=server_cfg['max_workers']))
     ublox_control_pb2_grpc.add_UbloxControlServicer_to_server(
-        UbloxControlServicer(), server
+        UbloxControlServicer(server_cfg), server
     )
 
     # Add RPC reflection to show available commands to users
@@ -268,6 +346,8 @@ def serve():
 
 
 if __name__ == "__main__":
-
-
-    serve()
+    # Load server configuration
+    server_cfg_file = "ublox_control_server_config.json"
+    with open(cfg_dir / server_cfg_file, "r") as f:
+        server_cfg = json.load(f)
+    serve(server_cfg)

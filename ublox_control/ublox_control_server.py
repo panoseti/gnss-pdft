@@ -210,19 +210,20 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     @contextmanager
     def __f9t_lock_writer(self, context):
+        active = False
         try:
             with self.__f9t_lock:
                 # BEGIN check-in critical section
                 # Wait until no active readers or active writers
                 self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
-                self.__f9t_rw_lock_state['ww'] += 1
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
                     if not context.is_active():
-                        self.__f9t_rw_lock_state['ww'] -= 1
                         raise grpc.FutureCancelledError("context terminated during writer lock acquisition")
+                    self.__f9t_rw_lock_state['ww'] += 1
                     self.__write_ok.wait(timeout=10)
-                self.__f9t_rw_lock_state['ww'] -= 1
+                    self.__f9t_rw_lock_state['ww'] -= 1
                 self.__f9t_rw_lock_state['aw'] += 1
+                active = True
                 self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
                 # END check-in critical section
             yield None
@@ -230,7 +231,8 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             with self.__f9t_lock:
                 # BEGIN check-out critical section
                 self.logger.debug(f"(writer) check-out (start):\t{self.__f9t_rw_lock_state=}")
-                self.__f9t_rw_lock_state['aw'] = max(0, self.__f9t_rw_lock_state['aw'] - 1)  # no longer active
+                if active:  # handle edge cases where thread is interrupted or has an error during lock acquire
+                    self.__f9t_rw_lock_state['aw'] = self.__f9t_rw_lock_state['aw'] - 1  # no longer active
                 if self.__f9t_rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
                     self.__write_ok.notify()
                 elif self.__f9t_rw_lock_state['wr'] > 0:
@@ -241,20 +243,20 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     @contextmanager
     def __f9t_lock_reader(self, context):
         read_fmap_idx = -1  # remember which read_queue freemap entry corresponds to this thread
+        active = False
         try:
             with self.__f9t_lock:
                 # BEGIN check-in critical section
                 # Wait until no active writers
-                self.__f9t_rw_lock_state['wr'] += 1
                 self.logger.info(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
                     if not context.is_active():
-                        self.__f9t_rw_lock_state['wr'] -= 1
                         raise grpc.FutureCancelledError("reader context terminated during reader lock acquisition")
+                    self.__f9t_rw_lock_state['wr'] += 1
                     self.__read_ok.wait()
-
-                self.__f9t_rw_lock_state['wr'] -= 1
+                    self.__f9t_rw_lock_state['wr'] -= 1
                 self.__f9t_rw_lock_state['ar'] += 1
+                active = True
 
                 # allocate a read queue for this thread
                 for idx, is_allocated in enumerate(self.__read_queues_freemap):
@@ -272,7 +274,8 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             with self.__f9t_lock:
                 # BEGIN check-out critical section
                 self.logger.debug(f"(reader) check-out (start):\t{self.__f9t_rw_lock_state=}")
-                self.__f9t_rw_lock_state['ar'] = max(0, self.__f9t_rw_lock_state['ar'] - 1)  # no longer active
+                if active:
+                    self.__f9t_rw_lock_state['ar'] = self.__f9t_rw_lock_state['ar'] - 1  # no longer active
                 self.__read_queues_freemap[read_fmap_idx] = False  # release the read queue
                 # Wake up waiting reader / writers (prioritize waiting writers).
                 if self.__f9t_rw_lock_state['ar'] == 0 and self.__f9t_rw_lock_state['ww'] > 0:
@@ -457,8 +460,9 @@ def serve(server_cfg):
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("'^C' received, shutting down the server in 5 seconds.")
-        server.stop(grace=5).wait()
+        grace = server_cfg["shutdown_grace_period"]
+        print(f"'^C' received, shutting down the server in {grace} seconds.")
+        server.stop(grace=grace).wait(timeout=grace + 1)
 
 
 

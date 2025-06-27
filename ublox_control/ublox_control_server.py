@@ -103,7 +103,7 @@ def f9t_io_data_DEBUG(
     logger.info("Established serial connection to F9t chip")
     while not stop.is_set():
         try:
-            time.sleep(0.3)
+            time.sleep(1)
             parsed_data = {
                 "identity": "f9t_io DEBUG",
                 "test_field": random.choice(["fox", "socks", "box", "knox"]),
@@ -402,9 +402,6 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     if name == 'TIM-TP':
                         ...
                     parsed_data_dict = {
-                        'qErr': random.randint(-4, 4),
-                        # 'field2': 'hello',
-                        # 'field4': None,
                         'test_field': parsed_data['test_field'],
                         'uid': parsed_data['id'],
                     }

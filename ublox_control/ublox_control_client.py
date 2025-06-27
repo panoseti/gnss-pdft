@@ -11,10 +11,13 @@ import random
 
 import pyubx2
 import redis
-from rich import print
-from rich.pretty import pprint
 import re
 import datetime
+
+# rich formatting
+from rich import print
+from rich.pretty import pprint, Pretty
+from rich.console import Console
 
 ## gRPC imports
 import grpc
@@ -34,7 +37,7 @@ import ublox_control_pb2
 import ublox_control_pb2_grpc
 
 # alias messages to improve readability
-from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig
+from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig, GnssPacket
 
 
 ## our code
@@ -91,11 +94,12 @@ def capture_packets(stub, patterns, f9t_cfg):
             re.compile(pat)  # verify each regex pattern compiles
         return CaptureCommand(patterns=pats)
 
-    def format_packet_data(name, parsed_data, timestamp: datetime.datetime):
+    def format_gnss_packet(packet_type, name, message, parsed_data, timestamp: datetime.datetime):
         timestamp = timestamp.isoformat()
-        return f"{name=} : {timestamp=} : {parsed_data}"
+        packet_type = GnssPacket.Type.Name(packet_type)
+        return f"{name=}, {parsed_data}, {message=}, {timestamp=}, {packet_type=}"
 
-    def write_packet_data_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp: datetime.datetime):
+    def write_gnss_packet_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp: datetime.datetime):
         # curr_time = datetime.datetime.now(tz=datetime.timezone.utc)
         # TODO: write methods to unpack parsed data
         rkey = get_f9t_redis_key(chip_name, chip_uid, packet_id)
@@ -105,7 +109,7 @@ def capture_packets(stub, patterns, f9t_cfg):
         r.hset(rkey, 'Computer_UTC', timestamp_float)
 
     # start packet stream
-    packet_data_stream = stub.CapturePackets(
+    gnss_packet_stream = stub.CapturePackets(
         make_capture_command(patterns)
     )
 
@@ -113,12 +117,23 @@ def capture_packets(stub, patterns, f9t_cfg):
     chip_name = f9t_cfg['chip_name']
     chip_uid = f9t_cfg['chip_uid']
     with redis.Redis(host=redis_host, port=redis_port) as r:
-        for packet_data in packet_data_stream:
-            packet_id = packet_data.name
-            parsed_data = MessageToDict(packet_data.parsed_data)
-            timestamp = packet_data.timestamp.ToDatetime()
-            print(format_packet_data(packet_id, parsed_data, timestamp))
-            write_packet_data_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp)
+        for gnss_packet in gnss_packet_stream:
+            packet_type = gnss_packet.type
+            packet_id = gnss_packet.name
+            message = gnss_packet.message
+            parsed_data = MessageToDict(gnss_packet.parsed_data)
+            timestamp = gnss_packet.timestamp.ToDatetime()
+            if packet_type == GnssPacket.Type.DATA:
+                logger.debug(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                write_gnss_packet_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp)
+            elif packet_type == GnssPacket.Type.ERROR:
+                if packet_id == "UNEXPECTED_F9T_DISCONNECTION":
+                    logger.critical(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                elif packet_id == "INVALID_SERVER_STATE":
+                    logger.warning(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                else:
+                    logger.error(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+
 
 
 

@@ -21,17 +21,25 @@ service UbloxControl {
 
   // Start a stream of GNSS metadata packets from the server to the headnode.
   // Requires that the F9t chip has previously been SET to stream the desired messages.
-  rpc CapturePackets(CaptureCommand) returns (stream PacketData) {}
+  rpc CapturePackets(CaptureCommand) returns (stream GnssPacket) {}
 }
 
 // data returned by GET and POLL requests from the F9t chip
-message PacketData {
+message GnssPacket {
+  enum Type {
+    UNDEFINED = 0;
+    DATA = 1;
+    ERROR = 2;
+  }
+  Type type = 1;
   // message name for the ublox packet. pyubx2/ubxtypes_poll.py for supported names
-  string name = 1;
+  string name = 2;
   // dictionary of parsed data in the specified packet
-  google.protobuf.Struct parsed_data = 2;
+  google.protobuf.Struct parsed_data = 3;
   // UTC timestamp when this message was received by the DAQ node
-  google.protobuf.Timestamp timestamp = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  // optional message for errors and other details
+  string message = 5;
 }
 
 
@@ -42,7 +50,7 @@ message PollRequest {
 
 message PollResponse {
   // list of messages for each message matching the patterns sent in PollRequest
-  repeated PacketData packet_data = 1;
+  repeated GnssPacket gnss_packet = 1;
 }
 
 // A CaptureCommand specifies which messages to stream with the CapturePackets RPC.

@@ -217,7 +217,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"(writer) check-in (start):\t{self.__f9t_rw_lock_state=}")
                 self.__f9t_rw_lock_state['ww'] += 1
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ar']) > 0:
-                    self.__write_ok.wait()
+                    self.__write_ok.wait(timeout=10)
                 self.__f9t_rw_lock_state['ww'] -= 1
                 self.__f9t_rw_lock_state['aw'] += 1
                 self.logger.debug(f"(writer) check-in (end):\t\t{self.__f9t_rw_lock_state=}")
@@ -243,7 +243,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 # BEGIN check-in critical section
                 # Wait until no active writers
                 self.__f9t_rw_lock_state['wr'] += 1
-                self.logger.debug(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
+                self.logger.info(f"(reader) check-in (start):\t{self.__f9t_rw_lock_state=}")
                 while (self.__f9t_rw_lock_state['aw'] + self.__f9t_rw_lock_state['ww']) > 0:  # safe to read?
                     self.__read_ok.wait()
                 self.__f9t_rw_lock_state['wr'] -= 1

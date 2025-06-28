@@ -152,9 +152,9 @@ def run(host, port=50051):
             #for i in range(1):
             print("-------------- InitF9t --------------")
             client_f9t_cfg = default_f9t_cfg
-            client_f9t_cfg['chip_uid'] = 'DEADBEEFED'
+            client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
             curr_f9t_cfg = client_f9t_cfg
-            # curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
+            curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
 
             print("-------------- CapturePackets --------------")
             capture_packets(stub, None, curr_f9t_cfg)

@@ -75,7 +75,7 @@ def init_f9t(stub, f9t_cfg) -> dict:
     curr_f9t_cfg = MessageToDict(init_summary.f9t_cfg, preserving_proto_field_name=True)
     print(f'init_summary.status=', init_status)
     print(f'{init_summary.message=}')
-    print("init_summary.f9t_cfg=", curr_f9t_cfg, end='')
+    print("init_summary.f9t_cfg=", end='')
     pprint(curr_f9t_cfg, expand_all=True)
     print(init_summary.test_results)
     # for i, test_result in enumerate(init_summary.test_results):

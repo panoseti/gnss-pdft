@@ -22,7 +22,7 @@ from pyubx2 import UBXReader, UBX_PROTOCOL, UBXMessage, SET_LAYER_RAM, POLL_LAYE
 import ublox_control_pb2
 
 # message enums
-from ublox_control_pb2 import TestCase, InitSummary, CaptureCommand, GnssPacket
+from ublox_control_pb2 import TestCase, InitF9tResponse, CaptureUbloxRequest, CaptureUbloxResponse
 
 
 

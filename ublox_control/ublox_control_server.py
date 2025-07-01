@@ -48,8 +48,9 @@ def f9t_io_data(
     read_queue_freemap: List[bool],
     send_queue: Queue,
     stop: Event,
-    f9t_io_thread_exit: Event,
-    logger: logging.Logger
+    valid: Event,
+    logger: logging.Logger,
+    **kwargs
 ):
     """
     THREADED
@@ -59,8 +60,8 @@ def f9t_io_data(
     Send any queued outbound messages to receiver.
     :license: BSD 3-Clause
     """
-    logger.info("Created a new f9t_io thread.")
-    f9t_io_thread_exit.clear()
+    logger.info(f"Created a new f9t_io thread with the following options: {kwargs=}")
+    valid.set()
     try:
         with Serial(device, baudrate, timeout=timeout) as stream:
             ubr = UBXReader(stream, protfilter=UBX_PROTOCOL)
@@ -82,7 +83,7 @@ def f9t_io_data(
         logger.critical(f"f9t_io thread encountered a fatal exception! {err}")
         raise err
     finally:
-        f9t_io_thread_exit.set()
+        valid.clear()
         logger.info("f9t_io thread exited")
     # print("f9t_io_data exited.")
 
@@ -95,7 +96,7 @@ def f9t_io_data_DEBUG(
         read_queue_freemap: List[bool],
         send_queue: Queue,
         stop: Event,
-        f9t_io_thread_exit: Event,
+        alive: Event,
         logger: logging.Logger,
         **kwargs
 ):
@@ -108,7 +109,7 @@ def f9t_io_data_DEBUG(
     :license: BSD 3-Clause
     """
     logger.info(f"Created a new DEBUG f9t_io thread with the following options: {kwargs=}")
-    f9t_io_thread_exit.clear()
+    alive.set()
     try:
         logger.info("Connected the f9t_io thread to the F9t chip.")
         if "early_exit_delay_seconds" in kwargs:
@@ -145,23 +146,9 @@ def f9t_io_data_DEBUG(
     except Exception as err:
         logger.critical(f"f9t_io thread encountered a fatal exception! {err}")
     finally:
-        f9t_io_thread_exit.set()
+        alive.clear()
         logger.info("f9t_io thread exited")
     # print("f9t_io_data exited.")
-
-def process_data(queue: Queue, stop: Event):
-    """
-    THREADED
-    Get UBX data from queue and display.
-    :author: semuadmin
-    :copyright: SEMU Consulting © 2021
-    :license: BSD 3-Clause
-    """
-
-    while not stop.is_set():
-        if queue.empty() is False:
-            (_, parsed) = queue.get()
-            print(parsed)
 
 
 """gRPC server implementing UbloxControl RPCs"""
@@ -192,15 +179,15 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         # Create the server's logger
         self.logger = make_rich_logger(__name__, level=logging.DEBUG)
 
-        # Load F9t configuration
-        with open(cfg_dir/self._server_cfg["f9t_cfg_file"], "r") as f:
+        # Load default F9t configuration
+        with open(cfg_dir/self._server_cfg["InitF9t"]["default_f9t_cfg_file"], "r") as f:
             self._f9t_cfg = json.load(f)
 
         ## State for single producer, multiple consumer F9t access
         # A single IO thread manages the dataflow between multiple concurrent RPC threads and the F9t:
         #   [single RPC writer -> F9t IO thread] write POLL and SET requests to the F9t
         #   [F9t IO thread -> many RPC readers] read (GET) packets from the F9t and write to max_workers read_queues
-        self._f9t_io_thread = None  # initialized by
+        self._f9t_io_thread: Thread = None  # initialized by
 
         # Create an array of read_queues and freemap locks to support up to max_worker concurrent reader RPCs
         self._read_queues = []  # Duplicate queues to implement single producer, multiple independent consumer model
@@ -209,19 +196,20 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             self._read_queues.append(Queue(maxsize=server_cfg['max_read_queue_size']))
             self._read_queues_freemap.append(False)
         self._send_queue = Queue()  # Used by InitF9t and PollMessage to send SET and POLL requests to the F9t chip
-        #
         self._f9t_io_stop = Event()  # Signals F9t IO thread to release the serial connection to the F9t
-        self._f9t_io_exit = Event()  # Asserted when F9t IO thread exits
+        self._f9t_io_valid = Event()  # Asserted only if f9t_io thread is running
 
         # Start F9t io thread if server_cfg points to a valid f9t_cfg and doesn't require an initial InitF9t RPC
-        if not self._server_cfg["require_headnode_init"] and self._f9t_cfg["is_valid"]:
+        if self._server_cfg["InitF9t"]["allow_init_from_default"] and self._f9t_cfg["is_valid"]:
             self.logger.info(f"Creating the initial f9t_io thread from config: "
-                             f"{self._server_cfg["require_headnode_init"]=} and {self._f9t_cfg["is_valid"]=}.")
+                             f"{self._server_cfg["InitF9t"]["allow_init_from_default"]} and "
+                             f"{self._f9t_cfg["is_valid"]=}.")
             self._server_cfg['f9t_init_valid'] = True
             self._start_f9t_io_thread(self._f9t_cfg)
         else:
             self.logger.info(f"An InitF9t call is required to start the f9t_io thread: "
-                             f"{self._server_cfg["require_headnode_init"]=} and {self._f9t_cfg["is_valid"]=}.")
+                             f"{self._server_cfg["InitF9t"]["allow_init_from_default"]} and "
+                             f"{self._f9t_cfg["is_valid"]=}.")
 
             self._server_cfg['f9t_init_valid'] = False
 
@@ -229,14 +217,12 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         """Terminate f9t_io thread and free its F9t serial connection"""
         # assert the stop event and wait for the f9t_io thread to exit
         all_ok = True
-        self._f9t_io_stop.set()
-        if self._f9t_io_thread is not None and not self._f9t_io_exit.is_set():
-            self._f9t_io_thread.join()
+        all_ok &= self._stop_f9t_io_thread()
         for thread_state, num_threads in self._f9t_rw_lock_state.items():
             if num_threads != 0:
                 self.logger.critical(f"[rw lock] unexpected threads in state {thread_state} at termination!\n"
                                      f"{self._f9t_rw_lock_state=}")
-                all_ok = False
+                all_ok &= False
         if all_ok:
             self.logger.info("Successfully released all resources")
         else:
@@ -252,15 +238,17 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"(writer) check-in (start):\t{self._f9t_rw_lock_state=}")
                 while (self._f9t_rw_lock_state['aw'] + self._f9t_rw_lock_state['ar']) > 0:
                     if not context.is_active():
-                        raise grpc.FutureCancelledError("context terminated during writer lock acquisition")
+                        raise grpc.FutureCancelledError(
+                            "client context terminated during writer lock acquisition [skipping to check-out]"
+                        )
                     self._f9t_rw_lock_state['ww'] += 1
                     self._write_ok.wait(timeout=10)
                     self._f9t_rw_lock_state['ww'] -= 1
                 self._f9t_rw_lock_state['aw'] += 1
                 active = True
                 # check environment
-                if context.is_active() and self._server_cfg['f9t_init_valid'] and self._f9t_io_exit.is_set():
-                    emsg = f"f9t_io thread unexpectedly exited!"
+                if context.is_active() and self._server_cfg['f9t_init_valid'] and not self._is_f9t_io_valid():
+                    emsg = f"The f9t_io thread data stream unexpectedly became invalid!"
                     self.logger.critical(emsg)
                     self._server_cfg['f9t_init_valid'] = False
                     raise threading.ThreadError(emsg)
@@ -289,10 +277,12 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 # BEGIN check-in critical section
                 # Wait until no active writers
                 self.logger.debug(f"(reader) check-in (start):\t{self._f9t_rw_lock_state=}"
-                                 f"\n{self._read_queues_freemap=}")
+                                  f"\n{self._read_queues_freemap=}")
                 while (self._f9t_rw_lock_state['aw'] + self._f9t_rw_lock_state['ww']) > 0:  # safe to read?
                     if not context.is_active():
-                        raise grpc.FutureCancelledError("reader context terminated during reader lock acquisition")
+                        raise grpc.FutureCancelledError(
+                            "client context terminated during reader lock acquisition [skipping to check-out]"
+                        )
                     self._f9t_rw_lock_state['wr'] += 1
                     self._read_ok.wait()
                     self._f9t_rw_lock_state['wr'] -= 1
@@ -310,13 +300,13 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     emsg = "read_queue_freemap allocation failed! [SHOULD NEVER HAPPEN]"
                     self.logger.critical(emsg)
                     raise RuntimeError(emsg)
-                elif context.is_active() and self._server_cfg['f9t_init_valid'] and self._f9t_io_exit.is_set():
-                    emsg = f"f9t_io thread unexpectedly exited!"
+                if context.is_active() and self._server_cfg['f9t_init_valid'] and not self._is_f9t_io_valid():
+                    emsg = f"The f9t_io thread data stream unexpectedly became invalid!"
                     self.logger.critical(emsg)
                     self._server_cfg['f9t_init_valid'] = False
                     raise threading.ThreadError(emsg)
                 self.logger.debug(f"(reader) check-in (end):\t\t{self._f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}"
-                                 f"\n{self._read_queues_freemap=}")
+                                  f"\n{self._read_queues_freemap=}")
                 # END check-in critical section
             yield read_fmap_idx
         finally:
@@ -336,10 +326,9 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def _start_f9t_io_thread(self, f9t_cfg):
         """Creates a new f9t io thread with the given f9t_cfg"""
-        # Terminate any previous f9t_io thread
-        if self._f9t_io_thread is not None:
-            self._f9t_io_stop.set()
-            self._f9t_io_thread.join()
+        # Terminate any currently alive f9t_io thread
+        self._stop_f9t_io_thread()  # no effect if a f9t_io thread is not alive
+
         # Create new f9t_io_thread using the client's configuration
         self._f9t_io_stop.clear()
         self._f9t_io_thread = Thread(
@@ -353,7 +342,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self._read_queues_freemap,
                 self._send_queue,
                 self._f9t_io_stop,
-                self._f9t_io_exit,
+                self._f9t_io_valid,
                 self.logger,
             ),
             kwargs={
@@ -363,6 +352,45 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             daemon=False,
         )
         self._f9t_io_thread.start()
+
+        # check if thread could be properly initialized
+        self._f9t_io_valid.wait(5)
+        if self._is_f9t_io_valid():
+            self.logger.info("f9t_io thread alive and valid")
+        else:
+            self._stop_f9t_io_thread()
+
+    def _is_f9t_io_valid(self):
+        if self._f9t_io_thread is not None and self._f9t_io_thread.is_alive() and self._f9t_io_valid.is_set():
+            return True
+        elif self._f9t_io_thread is None:
+            self.logger.warning("f9t_io thread uninitialized")
+        elif not self._f9t_io_thread.is_alive():
+            self.logger.critical("f9t_io thread failed to start")
+        elif not self._f9t_io_valid.is_set():
+            self.logger.warning("f9t_io thread alive but not valid")
+        else:
+            emsg = (f"unhandled is_f9t_io_valid case: "
+                   f"{self._f9t_io_thread=}, "
+                   f"{self._f9t_io_thread.is_alive()=},"
+                   f"{self._f9t_io_valid=}")
+            self.logger.critical(emsg)
+            raise RuntimeError(emsg)
+        return False
+
+
+    def _stop_f9t_io_thread(self):
+        """Stops the f9t io thread. Idempotent behavior."""
+        if self._f9t_io_thread is not None and self._f9t_io_thread.is_alive():
+            self._f9t_io_stop.set()  # signal f9t_io thread to exit gracefully
+            self._f9t_io_thread.join(5)  # wait until f9t_io exits
+            if self._f9t_io_thread.is_alive():  # check if join succeeded or timeout happened while waiting
+                self.logger.critical(f"Could not stop f9t_io thread")
+                return False
+            else:
+                self.logger.info(f"Successfully terminated f9t_io thread")
+                return True
+        return True
 
     def InitF9t(self, request, context):
         """Updates the F9t configuration in a transaction.
@@ -436,7 +464,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         # self.logger.info(f"F9T CFG Update: f9t_cfg['{key}'] = {repr(client_f9t_cfg[key])}")
                         self._f9t_cfg[key] = client_f9t_cfg[key]
                     message = "InitF9t transaction successful"
-                    init_status = ublox_control_pb2.InitSummary.InitStatus.SUCCESS
+                    init_status = ublox_control_pb2.InitF9tResponse.InitStatus.SUCCESS
                 else:
                     # Cancel transaction if any tests fail & rollback state to old initialization
                     # Restart the f9t_io thread with the old configuration only if old config was valid
@@ -445,37 +473,37 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         self._start_f9t_io_thread(self._f9t_cfg)
                     message = ("InitF9t transaction cancelled [f9t_io tests failed]."
                                "See the test_cases field for information about failing tests")
-                    init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
+                    init_status = ublox_control_pb2.InitF9tResponse.InitStatus.FAILURE
                 # END critical section for F9t [write] access
         else:
             message = ("InitF9t transaction cancelled [invalid client_f9t_cfg]."
                        "See the test_cases field for information about failing tests")
-            init_status = ublox_control_pb2.InitSummary.InitStatus.FAILURE
+            init_status = ublox_control_pb2.InitF9tResponse.InitStatus.FAILURE
 
         # Send summary of initialization process to client
-        init_summary = ublox_control_pb2.InitSummary(
+        init_f9t_response = ublox_control_pb2.InitF9tResponse(
             init_status=init_status,
             message=message,
             f9t_cfg=ParseDict(self._f9t_cfg, Struct()),
             test_results=test_results,
         )
-        return init_summary
+        return init_f9t_response
 
-    def CapturePackets(self, request, context):
+    def CaptureUblox(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
         # unpack the requested message pattern filters
         patterns = request.patterns
         regex_list = [re.compile(pattern) for pattern in patterns]
         # TODO: check if the patterns are valid
-        with self._f9t_lock_reader(context) as rid:  # rid = allocated reader id
+        with (self._f9t_lock_reader(context) as rid):  # rid = allocated reader id
             # BEGIN critical section for F9t [read] access
             # Clear the read_queue of old data
             rq = self._read_queues[rid]
             while not rq.empty():
                 rq.get()
-            if self._server_cfg['f9t_init_valid'] and not self._f9t_io_exit.is_set():
+            if self._server_cfg['f9t_init_valid'] and self._is_f9t_io_valid():
                 # self.logger.info("Streaming messages")
-                while context.is_active() and not self._f9t_io_exit.is_set():
+                while context.is_active() and self._is_f9t_io_valid():
                     # self.logger.debug("waiting for input")
                     try:
                         # wait for next packet from f9t_io thread
@@ -483,7 +511,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         # while this thread is blocking on the read_queue
                         raw_data, parsed_data = rq.get(timeout=10)
                         #self.logger.debug(f"got {parsed_data=}")
-                        # pack data into a GnssPacket message
+                        # pack data into a CaptureUbloxResponse message
                         # TODO: replace these hard-coded values with packets received from the connected u-blox chip
                         name = parsed_data['identity']  #name = parsed_data.identity
                         # TODO: find or create handlers to unpack each packet type into a dictionary of KV pairs
@@ -494,8 +522,8 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                         timestamp = timestamp_pb2.Timestamp()
                         timestamp.GetCurrentTime()
 
-                        gnss_packet = ublox_control_pb2.GnssPacket(
-                            type=ublox_control_pb2.GnssPacket.Type.DATA,
+                        gnss_packet = ublox_control_pb2.CaptureUbloxResponse(
+                            type=ublox_control_pb2.CaptureUbloxResponse.Type.DATA,
                             name=name,
                             parsed_data=ParseDict(parsed_data_dict, Struct()),
                             timestamp=timestamp
@@ -506,25 +534,28 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     except queue.Empty:
                         self.logger.warning("f9t_io thread may have stopped sending data")
                         continue
-                if context.is_active() and self._f9t_io_exit.is_set():
-                    emsg = f"f9t_io thread unexpectedly exited while servicing a CapturePackets RPC!"
+                # log reason why streaming stopped
+                if not context.is_active():
+                    self.logger.info(f"CaptureUblox client disconnected")
+                else:
+                    emsg = (f"The f9t_io thread data stream unexpectedly became invalid!"
+                            f"Check the UbloxControl server logs to debug this issue")
                     self.logger.critical(emsg)
+                    # report error to client
                     timestamp = timestamp_pb2.Timestamp()
                     timestamp.GetCurrentTime()
-                    gnss_packet = ublox_control_pb2.GnssPacket(
-                        type=ublox_control_pb2.GnssPacket.Type.ERROR,
-                        name="UNEXPECTED_F9T_DISCONNECTION",
-                        message="f9t_io thread unexpectedly exited while servicing a CapturePackets RPC!",
+                    gnss_packet = ublox_control_pb2.CaptureUbloxResponse(
+                        type=ublox_control_pb2.CaptureUbloxResponse.Type.ERROR,
+                        name="INVALID_F9T_IO",
+                        message=emsg,
                         timestamp=timestamp
                     )
                     yield gnss_packet
-                    # raise threading.ThreadError(emsg)
             else:
-                self.logger.warning(f"Uninitialized server. Run InitF9t to initialize")
                 timestamp = timestamp_pb2.Timestamp()
                 timestamp.GetCurrentTime()
-                gnss_packet = ublox_control_pb2.GnssPacket(
-                    type=ublox_control_pb2.GnssPacket.Type.ERROR,
+                gnss_packet = ublox_control_pb2.CaptureUbloxResponse(
+                    type=ublox_control_pb2.CaptureUbloxResponse.Type.ERROR,
                     name="INVALID_SERVER_STATE",
                     message="Run InitF9t with a valid f9t configuration to initialize",
                     timestamp=timestamp

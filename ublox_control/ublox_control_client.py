@@ -37,7 +37,7 @@ import ublox_control_pb2
 import ublox_control_pb2_grpc
 
 # alias messages to improve readability
-from ublox_control_pb2 import CaptureCommand, InitSummary, F9tConfig, GnssPacket
+from ublox_control_pb2 import CaptureUbloxRequest, InitF9tResponse, InitF9tRequest, CaptureUbloxResponse
 
 
 ## our code
@@ -65,38 +65,38 @@ def get_services(channel):
 
 
 def init_f9t(stub, f9t_cfg) -> dict:
-    """Initializes an F9T device according to the specification in f9t_config."""
-    f9t_config = F9tConfig(
+    """Initializes an F9T device according to the specification in init_f9t_request."""
+    init_f9t_request = InitF9tRequest(
         f9t_cfg=ParseDict(f9t_cfg, Struct())
     )
-    init_summary = stub.InitF9t(f9t_config)
-    # unpack init_summary
-    init_status = InitSummary.InitStatus.Name(init_summary.init_status)
-    curr_f9t_cfg = MessageToDict(init_summary.f9t_cfg, preserving_proto_field_name=True)
-    print(f'init_summary.status=', init_status)
-    print(f'{init_summary.message=}')
-    print("init_summary.f9t_cfg=", end='')
+    init_f9t_response = stub.InitF9t(init_f9t_request)
+    # unpack init_f9t_response
+    init_status = InitF9tResponse.InitStatus.Name(init_f9t_response.init_status)
+    curr_f9t_cfg = MessageToDict(init_f9t_response.f9t_cfg, preserving_proto_field_name=True)
+    print(f'init_f9t_response.status=', init_status)
+    print(f'{init_f9t_response.message=}')
+    print("init_f9t_response.f9t_cfg=", end='')
     pprint(curr_f9t_cfg, expand_all=True)
-    print(init_summary.test_results)
-    # for i, test_result in enumerate(init_summary.test_results):
+    print(init_f9t_response.test_results)
+    # for i, test_result in enumerate(init_f9t_response.test_results):
     #     print(f'TEST {i}:')
     #     print("\t" + str(test_result).replace("\n", "\n\t"))
     return curr_f9t_cfg
 
 
-def capture_packets(stub, patterns, f9t_cfg):
+def capture_ublox(stub, patterns, f9t_cfg):
     # valid_capture_command_aliases = ['start', 'stop']
 
-    def make_capture_command(pats):
+    def make_capture_ublox_request(pats):
         if pats is None:
-            return CaptureCommand()
+            return CaptureUbloxRequest()
         for pat in pats:
             re.compile(pat)  # verify each regex pattern compiles
-        return CaptureCommand(patterns=pats)
+        return CaptureUbloxRequest(patterns=pats)
 
     def format_gnss_packet(packet_type, name, message, parsed_data, timestamp: datetime.datetime):
         timestamp = timestamp.isoformat()
-        packet_type = GnssPacket.Type.Name(packet_type)
+        packet_type = CaptureUbloxResponse.Type.Name(packet_type)
         return f"{name=}, {parsed_data}, {message=}, {timestamp=}, {packet_type=}"
 
     def write_gnss_packet_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp: datetime.datetime):
@@ -109,8 +109,8 @@ def capture_packets(stub, patterns, f9t_cfg):
         r.hset(rkey, 'Computer_UTC', timestamp_float)
 
     # start packet stream
-    gnss_packet_stream = stub.CapturePackets(
-        make_capture_command(patterns)
+    gnss_packet_stream = stub.CaptureUblox(
+        make_capture_ublox_request(patterns)
     )
 
     redis_host, redis_port = "localhost", 6379
@@ -123,16 +123,16 @@ def capture_packets(stub, patterns, f9t_cfg):
             message = gnss_packet.message
             parsed_data = MessageToDict(gnss_packet.parsed_data)
             timestamp = gnss_packet.timestamp.ToDatetime()
-            if packet_type == GnssPacket.Type.DATA:
-                logger.debug(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+            if packet_type == CaptureUbloxResponse.Type.DATA:
+                logger.debug(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
                 write_gnss_packet_to_redis(r, chip_name, chip_uid, packet_id, parsed_data, timestamp)
-            elif packet_type == GnssPacket.Type.ERROR:
+            elif packet_type == CaptureUbloxResponse.Type.ERROR:
                 if packet_id == "UNEXPECTED_F9T_DISCONNECTION":
-                    logger.critical(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                    logger.critical(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
                 elif packet_id == "INVALID_SERVER_STATE":
-                    logger.warning(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                    logger.warning(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
                 else:
-                    logger.error(f"GnssPacket: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
+                    logger.error(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
 
 
 
@@ -156,8 +156,8 @@ def run(host, port=50051):
             curr_f9t_cfg = client_f9t_cfg
             curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
 
-            print("-------------- CapturePackets --------------")
-            capture_packets(stub, None, curr_f9t_cfg)
+            print("-------------- CaptureUblox --------------")
+            capture_ublox(stub, None, curr_f9t_cfg)
     except KeyboardInterrupt:
         logger.info(f"'^C' received, closing connection to UbloxControl server at {repr(connection_target)}")
     except grpc.RpcError as rpc_error:

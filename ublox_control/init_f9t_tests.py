@@ -10,10 +10,7 @@ Each function must have type Callable[..., Tuple[bool, str]] as the example belo
         else:
             return False, f"{n} is odd"
 """
-import os
-from threading import Thread, Event
 from ublox_control_resources import *
-from ublox_control_pb2 import TestCase, InitSummary
 from pyubx2.ubxhelpers import cfgkey2name
 
 from pyubx2 import POLL, UBX_PAYLOADS_POLL

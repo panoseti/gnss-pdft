@@ -73,11 +73,11 @@ def init_f9t(stub, f9t_cfg) -> dict:
     # unpack init_f9t_response
     init_status = InitF9tResponse.InitStatus.Name(init_f9t_response.init_status)
     curr_f9t_cfg = MessageToDict(init_f9t_response.f9t_cfg, preserving_proto_field_name=True)
-    print(f'init_f9t_response.status=', init_status)
-    print(f'{init_f9t_response.message=}')
     print("init_f9t_response.f9t_cfg=", end='')
     pprint(curr_f9t_cfg, expand_all=True)
     print(init_f9t_response.test_results)
+    print(f'{init_f9t_response.message=}')
+    print(f'init_f9t_response.status=', init_status)
     # for i, test_result in enumerate(init_f9t_response.test_results):
     #     print(f'TEST {i}:')
     #     print("\t" + str(test_result).replace("\n", "\n\t"))
@@ -153,8 +153,9 @@ def run(host, port=50051):
             print("-------------- InitF9t --------------")
             client_f9t_cfg = default_f9t_cfg
             client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
+            # client_f9t_cfg['is_valid'] = False
             curr_f9t_cfg = client_f9t_cfg
-            curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
+            # curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
 
             print("-------------- CaptureUblox --------------")
             capture_ublox(stub, None, curr_f9t_cfg)

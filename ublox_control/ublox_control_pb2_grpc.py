@@ -37,18 +37,18 @@ class UbloxControlStub(object):
         """
         self.InitF9t = channel.unary_unary(
                 '/ubloxcontrol.UbloxControl/InitF9t',
-                request_serializer=ublox__control__pb2.F9tConfig.SerializeToString,
-                response_deserializer=ublox__control__pb2.InitSummary.FromString,
+                request_serializer=ublox__control__pb2.InitF9tRequest.SerializeToString,
+                response_deserializer=ublox__control__pb2.InitF9tResponse.FromString,
                 _registered_method=True)
         self.PollMessage = channel.unary_unary(
                 '/ubloxcontrol.UbloxControl/PollMessage',
                 request_serializer=ublox__control__pb2.PollRequest.SerializeToString,
                 response_deserializer=ublox__control__pb2.PollResponse.FromString,
                 _registered_method=True)
-        self.CapturePackets = channel.unary_stream(
-                '/ubloxcontrol.UbloxControl/CapturePackets',
-                request_serializer=ublox__control__pb2.CaptureCommand.SerializeToString,
-                response_deserializer=ublox__control__pb2.GnssPacket.FromString,
+        self.CaptureUblox = channel.unary_stream(
+                '/ubloxcontrol.UbloxControl/CaptureUblox',
+                request_serializer=ublox__control__pb2.CaptureUbloxRequest.SerializeToString,
+                response_deserializer=ublox__control__pb2.CaptureUbloxResponse.FromString,
                 _registered_method=True)
 
 
@@ -70,7 +70,7 @@ class UbloxControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CapturePackets(self, request, context):
+    def CaptureUblox(self, request, context):
         """Start a stream of GNSS metadata packets from the server to the headnode.
         Requires that the F9t chip has previously been SET to stream the desired messages.
         """
@@ -83,18 +83,18 @@ def add_UbloxControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'InitF9t': grpc.unary_unary_rpc_method_handler(
                     servicer.InitF9t,
-                    request_deserializer=ublox__control__pb2.F9tConfig.FromString,
-                    response_serializer=ublox__control__pb2.InitSummary.SerializeToString,
+                    request_deserializer=ublox__control__pb2.InitF9tRequest.FromString,
+                    response_serializer=ublox__control__pb2.InitF9tResponse.SerializeToString,
             ),
             'PollMessage': grpc.unary_unary_rpc_method_handler(
                     servicer.PollMessage,
                     request_deserializer=ublox__control__pb2.PollRequest.FromString,
                     response_serializer=ublox__control__pb2.PollResponse.SerializeToString,
             ),
-            'CapturePackets': grpc.unary_stream_rpc_method_handler(
-                    servicer.CapturePackets,
-                    request_deserializer=ublox__control__pb2.CaptureCommand.FromString,
-                    response_serializer=ublox__control__pb2.GnssPacket.SerializeToString,
+            'CaptureUblox': grpc.unary_stream_rpc_method_handler(
+                    servicer.CaptureUblox,
+                    request_deserializer=ublox__control__pb2.CaptureUbloxRequest.FromString,
+                    response_serializer=ublox__control__pb2.CaptureUbloxResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -123,8 +123,8 @@ class UbloxControl(object):
             request,
             target,
             '/ubloxcontrol.UbloxControl/InitF9t',
-            ublox__control__pb2.F9tConfig.SerializeToString,
-            ublox__control__pb2.InitSummary.FromString,
+            ublox__control__pb2.InitF9tRequest.SerializeToString,
+            ublox__control__pb2.InitF9tResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -163,7 +163,7 @@ class UbloxControl(object):
             _registered_method=True)
 
     @staticmethod
-    def CapturePackets(request,
+    def CaptureUblox(request,
             target,
             options=(),
             channel_credentials=None,
@@ -176,9 +176,9 @@ class UbloxControl(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/ubloxcontrol.UbloxControl/CapturePackets',
-            ublox__control__pb2.CaptureCommand.SerializeToString,
-            ublox__control__pb2.GnssPacket.FromString,
+            '/ubloxcontrol.UbloxControl/CaptureUblox',
+            ublox__control__pb2.CaptureUbloxRequest.SerializeToString,
+            ublox__control__pb2.CaptureUbloxResponse.FromString,
             options,
             channel_credentials,
             insecure,

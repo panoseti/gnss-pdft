@@ -14,18 +14,19 @@ import "google/protobuf/timestamp.proto"; // standard type for JSON data structu
 // Interface exported by the server connected to the ublox chip
 service UbloxControl {
   // Configures a ZED-F9T chip and verifies all desired packets are being received.
-  rpc InitF9t(F9tConfig) returns (InitSummary) {}
+  rpc InitF9t(InitF9tRequest) returns (InitF9tResponse) {}
 
   // Poll all messages defined in pyubx2/ubxtypes_poll.py matching a specified regex pattern
   rpc PollMessage(PollRequest) returns (PollResponse) {}
 
   // Start a stream of GNSS metadata packets from the server to the headnode.
   // Requires that the F9t chip has previously been SET to stream the desired messages.
-  rpc CapturePackets(CaptureCommand) returns (stream GnssPacket) {}
+  rpc CaptureUblox(CaptureUbloxRequest) returns (stream CaptureUbloxResponse) {}
+
 }
 
 // data returned by GET and POLL requests from the F9t chip
-message GnssPacket {
+message CaptureUbloxResponse {
   enum Type {
     UNDEFINED = 0;
     DATA = 1;
@@ -50,7 +51,7 @@ message PollRequest {
 
 message PollResponse {
   // list of messages for each message matching the patterns sent in PollRequest
-  repeated GnssPacket gnss_packet = 1;
+  repeated CaptureUbloxResponse gnss_packet = 1;
 }
 
 // A CaptureCommand specifies which messages to stream with the CapturePackets RPC.
@@ -60,7 +61,7 @@ message PollResponse {
 //
 // If at least one regex pattern is given, only message names that
 // match at least of the given patterns will be streamed to the headnode.
-message CaptureCommand {
+message CaptureUbloxRequest {
   // optional: list of regex patterns for names to stream to the headnode
   repeated string patterns = 1;
 }
@@ -68,7 +69,7 @@ message CaptureCommand {
 // A F9tConfig is sent by the InitF9t RPC.
 //
 // It contains a JSON object specifying F9t configuration.
-message F9tConfig {
+message InitF9tRequest {
   // JSON-formatted configuration for an F9T
   google.protobuf.Struct f9t_cfg = 1;
 }
@@ -98,7 +99,7 @@ message TestCase {
 //
 // It returns information regarding the validity of the provided config file
 // and which validation checks passed.
-message InitSummary {
+message InitF9tResponse {
   enum InitStatus {
     // default state
     UNDEFINED = 0;

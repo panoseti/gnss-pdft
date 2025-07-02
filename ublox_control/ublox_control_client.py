@@ -45,7 +45,14 @@ from ublox_control_pb2 import CaptureUbloxRequest, InitF9tResponse, InitF9tReque
 ## our code
 from ublox_control_resources import *
 
+# Gracefully cancel active RPCs before exiting
 active_calls = []
+def cancel_requests(unused_signum, unused_frame):
+    """Signal handler to cancel all in-flight gRPCs."""
+    for future in active_calls:
+        future.cancel()
+    sys.exit(0)
+signal.signal(signal.SIGINT, cancel_requests)
 
 
 def get_services(channel):
@@ -120,7 +127,6 @@ def capture_ublox(stub, patterns, f9t_cfg, timeout=10):
     )
     # use active_calls to gracefully handle ^C cancellation
     active_calls.append(capture_ublox_response_future)
-    print(type(capture_ublox_response_future))
 
     # write stream return from the server
     redis_host, redis_port = "localhost", 6379
@@ -144,13 +150,6 @@ def capture_ublox(stub, patterns, f9t_cfg, timeout=10):
                 else:
                     logger.error(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
 
-def cancel_requests(unused_signum, unused_frame):
-    """Signal handler to cancel all in-flight gRPCs."""
-    for future in active_calls:
-        future.cancel()
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, cancel_requests)
 
 def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
@@ -170,7 +169,7 @@ def run(host, port=50051):
             print("-------------- InitF9t --------------")
             client_f9t_cfg = default_f9t_cfg
             client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
-            client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
+
             curr_f9t_cfg = client_f9t_cfg
             curr_f9t_cfg = init_f9t(stub, client_f9t_cfg, 5)
 

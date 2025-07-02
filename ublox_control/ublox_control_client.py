@@ -171,7 +171,7 @@ def run(host, port=50051):
             client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
 
             curr_f9t_cfg = client_f9t_cfg
-            curr_f9t_cfg = init_f9t(stub, client_f9t_cfg, 5)
+            # curr_f9t_cfg = init_f9t(stub, client_f9t_cfg, 5)
 
             print("-------------- CaptureUblox --------------")
             capture_ublox(stub, None, curr_f9t_cfg, 5)

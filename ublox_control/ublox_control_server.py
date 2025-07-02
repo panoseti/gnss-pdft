@@ -353,7 +353,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 if active:
                     self._f9t_rw_lock_state['ar'] = self._f9t_rw_lock_state['ar'] - 1  # no longer active
                     del self._active_clients[threading.get_ident()]
-                self._read_queues_freemap[read_fmap_idx] = False  # release the read queue
+                    self._read_queues_freemap[read_fmap_idx] = False  # release the read queue
                 # Wake up waiting readers or a waiting writer (prioritize waiting writers).
                 if self._f9t_rw_lock_state['ar'] == 0 and self._f9t_rw_lock_state['ww'] > 0:
                     self._write_ok_condvar.notify()
@@ -386,7 +386,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger,
             ),
             kwargs={
-                "early_exit": True,
+                "early_exit": False,  # causes the f9t_io thread have a fatal exception after the given delay
                 "early_exit_delay_seconds": 25
             },
             daemon=False,

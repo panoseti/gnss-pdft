@@ -2,7 +2,10 @@
 
 """
 The Python implementation of a gRPC UbloxControl client.
-
+Requires the following to work:
+    1. A valid network connection to the Redis database on the headnode with
+    R/W user permissions to the Redis UBLOX hashset.
+    2. All Python packages specified in requirements.txt.
 Run this on the headnode to configure the u-blox GNSS receivers in remote domes.
 """
 import logging

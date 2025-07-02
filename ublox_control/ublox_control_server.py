@@ -2,11 +2,11 @@
 
 """
 The Python implementation of a gRPC UbloxControl server.
-The server requires the following to correctly:
-    1. A valid network connection to the Redis database on the headnode with
-    R/W user permissions to the Redis UBLOX hashset.
-    2. A valid /dev file for a connected ZED-F9T u-blox chip.
-    3. The installation of all Python packages specified in requirements.txt.
+
+Requires the following to function correctly:
+    1. A POSIX-compliant operating system.
+    2. A valid connection to a ZED-F9T u-blox chip.
+    3. All Python packages specified in requirements.txt.
 """
 import logging
 import queue
@@ -273,7 +273,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     self.logger.critical(emsg)
                     self._server_cfg['f9t_init_valid'] = False
                     context.abort(grpc.StatusCode.INTERNAL, emsg)
-
+                # activate the writer
                 self._f9t_rw_lock_state['aw'] += 1
                 active = True
                 self._active_clients[threading.get_ident()] = urllib.parse.unquote(context.peer())
@@ -338,6 +338,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                     self._server_cfg['f9t_init_valid'] = False
                     context.abort(grpc.StatusCode.INTERNAL, emsg)
 
+                # activate the reader
                 self._f9t_rw_lock_state['ar'] += 1
                 active = True
                 self._active_clients[threading.get_ident()] = urllib.parse.unquote(context.peer())

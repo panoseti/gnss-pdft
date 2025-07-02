@@ -11,6 +11,7 @@ The server requires the following to correctly:
 import logging
 import queue
 import random
+import sys
 from concurrent import futures
 import threading
 from threading import Event, Thread
@@ -18,6 +19,7 @@ from queue import Queue
 from serial import Serial
 import time
 import re
+import urllib.parse
 
 import grpc
 
@@ -155,7 +157,6 @@ def f9t_io_data_DEBUG(
 
 
 """gRPC server implementing UbloxControl RPCs"""
-
 class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     """Provides methods that implement functionality of an u-blox control server."""
 
@@ -176,6 +177,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         self._f9t_lock = threading.Lock()
         self._read_ok_condvar = threading.Condition(self._f9t_lock)
         self._write_ok_condvar = threading.Condition(self._f9t_lock)
+        self._active_clients = {}  # dict of tid : context.peer() for debugging
 
         self._server_cfg = server_cfg
 
@@ -243,6 +245,17 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
         try:
             with self._f9t_lock:
                 # BEGIN check-in critical section
+                # All reader RPCs are long-lived server streaming operations.
+                # The server's synchronization logic will prevent writes to F9t state while any reader RPCs are active,
+                # so we should cancel any writer RPCs immediately
+                if self._f9t_rw_lock_state['ar'] > 0:
+                    active_clients = str(list(self._active_clients.values()))
+                    print(active_clients)
+                    context.abort(
+                        grpc.StatusCode.CANCELLED,
+                        f"Cannot modify F9t state because there are {self._f9t_rw_lock_state['ar']} "
+                        f"active CaptureUblox clients. Stop these client processes then try again: {active_clients=}."
+                    )
                 # Wait until no active readers or active writers
                 self.logger.debug(f"(writer) check-in (start):\t{self._f9t_rw_lock_state=}")
                 while context.is_active() and (self._f9t_rw_lock_state['aw'] + self._f9t_rw_lock_state['ar']) > 0:
@@ -252,7 +265,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
                 # check if environment is still valid
                 if not context.is_active():
-                    emsg = "client context terminated during writer lock acquisition (skipping to check-out)"
+                    emsg = "client cancelled rpc during writer lock acquisition (skipping to check-out)"
                     self.logger.warning(emsg)
                     raise grpc.FutureCancelledError(emsg)
 
@@ -265,6 +278,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
                 self._f9t_rw_lock_state['aw'] += 1
                 active = True
+                self._active_clients[threading.get_ident()] = urllib.parse.unquote(context.peer())
                 self.logger.debug(f"(writer) check-in (end):\t\t{self._f9t_rw_lock_state=}")
                 # END check-in critical section
             yield None
@@ -276,6 +290,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"(writer) check-out (start):\t{self._f9t_rw_lock_state=}")
                 if active:  # handle edge cases where thread is interrupted or has an error during lock acquire
                     self._f9t_rw_lock_state['aw'] = self._f9t_rw_lock_state['aw'] - 1  # no longer active
+                    del self._active_clients[threading.get_ident()]
                 # Wake up waiting readers or a waiting writer (prioritize waiting writers).
                 if self._f9t_rw_lock_state['ww'] > 0:  # Give lock priority to waiting writers
                     self._write_ok_condvar.notify()
@@ -327,6 +342,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
                 self._f9t_rw_lock_state['ar'] += 1
                 active = True
+                self._active_clients[threading.get_ident()] = urllib.parse.unquote(context.peer())
                 self.logger.debug(f"(reader) check-in (end):\t\t{self._f9t_rw_lock_state=}, fmap_idx={read_fmap_idx}"
                                   f"\n{self._read_queues_freemap=}")
                 # END check-in critical section
@@ -338,6 +354,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
                 self.logger.debug(f"(reader) check-out (start):\t{self._f9t_rw_lock_state=}")
                 if active:
                     self._f9t_rw_lock_state['ar'] = self._f9t_rw_lock_state['ar'] - 1  # no longer active
+                    del self._active_clients[threading.get_ident()]
                 self._read_queues_freemap[read_fmap_idx] = False  # release the read queue
                 # Wake up waiting readers or a waiting writer (prioritize waiting writers).
                 if self._f9t_rw_lock_state['ar'] == 0 and self._f9t_rw_lock_state['ww'] > 0:
@@ -398,9 +415,9 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             self.logger.warning("f9t_io thread alive but not valid")
         else:
             emsg = (f"unhandled is_f9t_io_valid case: "
-                   f"{self._f9t_io_thread=}, "
-                   f"{self._f9t_io_thread.is_alive()=},"
-                   f"{self._f9t_io_valid=}")
+                    f"{self._f9t_io_thread=}, "
+                    f"{self._f9t_io_thread.is_alive()=},"
+                    f"{self._f9t_io_valid=}")
             self.logger.critical(emsg)
             raise RuntimeError(emsg)
         return False
@@ -408,11 +425,11 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
 
     def _stop_f9t_io_thread(self):
         """Stops the f9t io thread. Idempotent behavior.
-        @return: True iff the f9t io thread was stopped."""
+        @return: True iff the f9t io thread is not alive."""
         self._f9t_io_stop.set()  # signal f9t_io thread to exit gracefully
         if self._f9t_io_thread is not None and self._f9t_io_thread.is_alive():
             try:
-                self._f9t_io_thread.join(1)  # wait until f9t_io exits
+                self._f9t_io_thread.join(5)  # wait until f9t_io exits
             except RuntimeError as rerr:
                 self.logger.critical(f"encountered runtime error while stopping f9t_io thread: {rerr}")
             finally:
@@ -434,7 +451,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
             3. Commit the client's configuration to internal server state.
         [f9t writer]
         """
-        self.logger.info("new InitF9t rpc")
+        self.logger.info(f"new InitF9t rpc from {context.peer()}")
         f9t_cfg_keys_to_copy = ['device', 'chip_name', 'chip_uid', 'timeout', 'cfg_key_settings', 'comments']
         test_results = []
 
@@ -541,7 +558,7 @@ class UbloxControlServicer(ublox_control_pb2_grpc.UbloxControlServicer):
     def CaptureUblox(self, request, context):
         """Forward u-blox packets to the client. [reader]"""
         # unpack the requested message pattern filters
-        self.logger.info("new CaptureUblox rpc")
+        self.logger.info(f"new CaptureUblox rpc from {context.peer()}")
         patterns = request.patterns
         regex_list = [re.compile(pattern) for pattern in patterns]
         # TODO: check if the patterns are valid
@@ -636,7 +653,8 @@ def serve(server_cfg):
     except KeyboardInterrupt:
         grace = server_cfg["shutdown_grace_period"]
         print(f"'^C' received, shutting down the server in {grace} seconds.")
-        server.stop(grace=grace).wait(timeout=grace + 0.1)
+        server.stop(grace=grace).wait(grace)
+        sys.exit(0)
 
 
 

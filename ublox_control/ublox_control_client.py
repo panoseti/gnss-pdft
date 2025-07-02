@@ -8,6 +8,8 @@ Run this on the headnode to configure the u-blox GNSS receivers in remote domes.
 import logging
 import queue
 import random
+import sys
+import signal
 
 import pyubx2
 import redis
@@ -43,6 +45,8 @@ from ublox_control_pb2 import CaptureUbloxRequest, InitF9tResponse, InitF9tReque
 ## our code
 from ublox_control_resources import *
 
+active_calls = []
+
 
 def get_services(channel):
     """Prints all available RPCs for the UbloxControl service represented by [channel]."""
@@ -64,12 +68,14 @@ def get_services(channel):
         print(f"\tfound: {format_rpc_service(method)}")
 
 
-def init_f9t(stub, f9t_cfg) -> dict:
+def init_f9t(stub, f9t_cfg, timeout=10) -> dict:
     """Initializes an F9T device according to the specification in init_f9t_request."""
-    init_f9t_request = InitF9tRequest(
-        f9t_cfg=ParseDict(f9t_cfg, Struct())
-    )
-    init_f9t_response = stub.InitF9t(init_f9t_request)
+    init_f9t_request = InitF9tRequest(f9t_cfg=ParseDict(f9t_cfg, Struct()))
+    init_f9t_response_future = stub.InitF9t.future(init_f9t_request, timeout=timeout)
+    active_calls.append(init_f9t_response_future)
+    init_f9t_response = init_f9t_response_future.result()
+    active_calls.pop()
+
     # unpack init_f9t_response
     init_status = InitF9tResponse.InitStatus.Name(init_f9t_response.init_status)
     curr_f9t_cfg = MessageToDict(init_f9t_response.f9t_cfg, preserving_proto_field_name=True)
@@ -84,7 +90,7 @@ def init_f9t(stub, f9t_cfg) -> dict:
     return curr_f9t_cfg
 
 
-def capture_ublox(stub, patterns, f9t_cfg):
+def capture_ublox(stub, patterns, f9t_cfg, timeout=10):
     # valid_capture_command_aliases = ['start', 'stop']
 
     def make_capture_ublox_request(pats):
@@ -109,15 +115,19 @@ def capture_ublox(stub, patterns, f9t_cfg):
         r.hset(rkey, 'Computer_UTC', timestamp_float)
 
     # start packet stream
-    gnss_packet_stream = stub.CaptureUblox(
+    capture_ublox_response_future = stub.CaptureUblox(
         make_capture_ublox_request(patterns)
     )
+    # use active_calls to gracefully handle ^C cancellation
+    active_calls.append(capture_ublox_response_future)
+    print(type(capture_ublox_response_future))
 
+    # write stream return from the server
     redis_host, redis_port = "localhost", 6379
     chip_name = f9t_cfg['chip_name']
     chip_uid = f9t_cfg['chip_uid']
     with redis.Redis(host=redis_host, port=redis_port) as r:
-        for gnss_packet in gnss_packet_stream:
+        for gnss_packet in capture_ublox_response_future:
             packet_type = gnss_packet.type
             packet_id = gnss_packet.name
             message = gnss_packet.message
@@ -134,13 +144,19 @@ def capture_ublox(stub, patterns, f9t_cfg):
                 else:
                     logger.error(f"CaptureUbloxResponse: {format_gnss_packet(packet_type, packet_id, message, parsed_data, timestamp)}")
 
+def cancel_requests(unused_signum, unused_frame):
+    """Signal handler to cancel all in-flight gRPCs."""
+    for future in active_calls:
+        future.cancel()
+    sys.exit(0)
 
-
+signal.signal(signal.SIGINT, cancel_requests)
 
 def run(host, port=50051):
     # NOTE(gRPC Python Team): .close() is possible on a channel and should be
     # used in circumstances in which the with statement does not fit the needs
     # of the code.
+
     connection_target = f"{host}:{port}"
     try:
         with grpc.insecure_channel(connection_target) as channel:
@@ -149,16 +165,17 @@ def run(host, port=50051):
             print("-------------- ServerReflection --------------")
             get_services(channel)
 
+
             #for i in range(1):
             print("-------------- InitF9t --------------")
             client_f9t_cfg = default_f9t_cfg
             client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
-            # client_f9t_cfg['is_valid'] = False
+            client_f9t_cfg['chip_uid'] = 'BEEFEDDEAD'
             curr_f9t_cfg = client_f9t_cfg
-            # curr_f9t_cfg = init_f9t(stub, client_f9t_cfg)
+            curr_f9t_cfg = init_f9t(stub, client_f9t_cfg, 5)
 
             print("-------------- CaptureUblox --------------")
-            capture_ublox(stub, None, curr_f9t_cfg)
+            capture_ublox(stub, None, curr_f9t_cfg, 5)
     except KeyboardInterrupt:
         logger.info(f"'^C' received, closing connection to UbloxControl server at {repr(connection_target)}")
     except grpc.RpcError as rpc_error:

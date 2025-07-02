@@ -10,6 +10,7 @@ from pathlib import Path
 import redis
 
 from rich import print
+# from rich.markup import escape
 from rich.logging import RichHandler
 from rich.pretty import pprint
 

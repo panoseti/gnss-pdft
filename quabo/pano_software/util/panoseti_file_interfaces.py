@@ -230,6 +230,7 @@ class ObservingRunInterface:
 
     @staticmethod
     def plot_image(img, **kwargs):
+        raise NotImplementedError
         if img is None or not isinstance(img, np.ndarray):
             print('no image')
             return None
@@ -251,6 +252,9 @@ class ObservingRunInterface:
         """
         Evenly samples image frames between now and now-delta_t, then aggregates
         the frames according to the given aggregation method.
+
+        Possible uses:
+            - Stack a certain number of image frames found by module_file_time_seek.
 
         By default, stack until a total of 6ms of observational data is accumulated. e.g.:
         - if you have 100us panoseti image data, add 60 images together, roughly evenly spaced over 1 second.

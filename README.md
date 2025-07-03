@@ -2,6 +2,7 @@
 ```
 conda create -n gnss-pdft
 conda activate gnss-pdft
-conda install -c conda-forge pyubx2 pyserial pygnssutils
-conda install jupyter pandas numpy seaborn matplotlib pyvisa
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+conda install pyubx2 pyserial pygnssutils grpcio grpcio-tools libgrpc grpcio-reflection rich redis-py jupyter pandas numpy 
 ```
